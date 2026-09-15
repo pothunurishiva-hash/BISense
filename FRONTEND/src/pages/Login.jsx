@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import "../App.css";
@@ -12,13 +12,65 @@ export default function Login() {
   const [password, setPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] =
+    useState(true);
+
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
   const isSignup = mode === "signup";
 
+  useEffect(() => {
+    let mounted = true;
+
+    const checkExistingSession = async () => {
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (sessionError) {
+          console.error(
+            "Unable to check session:",
+            sessionError
+          );
+        }
+
+        if (
+          mounted &&
+          session?.user
+        ) {
+          navigate("/dashboard", {
+            replace: true,
+          });
+          return;
+        }
+      } catch (err) {
+        console.error(
+          "Session check failed:",
+          err
+        );
+      } finally {
+        if (mounted) {
+          setCheckingSession(false);
+        }
+      }
+    };
+
+    checkExistingSession();
+
+    return () => {
+      mounted = false;
+    };
+  }, [navigate]);
+
   const handleSubmit = async (event) => {
     event.preventDefault();
+
+    if (loading) {
+      return;
+    }
 
     setError("");
     setMessage("");
@@ -28,36 +80,50 @@ export default function Login() {
       const cleanEmail = email.trim();
       const cleanName = name.trim();
 
-      if (!cleanEmail || !password.trim()) {
-        throw new Error("Please enter your email and password.");
-      }
-
-      if (password.length < 6) {
-        throw new Error("Password must be at least 6 characters.");
+      if (!cleanEmail || !password) {
+        throw new Error(
+          "Please enter your email and password."
+        );
       }
 
       if (isSignup && !cleanName) {
-        throw new Error("Please enter your name.");
+        throw new Error(
+          "Please enter your name."
+        );
+      }
+
+      if (password.length < 6) {
+        throw new Error(
+          "Password must be at least 6 characters."
+        );
       }
 
       if (isSignup) {
-        const { data, error: signupError } =
-          await supabase.auth.signUp({
-            email: cleanEmail,
-            password,
-            options: {
-              data: {
-                name: cleanName,
-              },
+        const {
+          data,
+          error: signupError,
+        } = await supabase.auth.signUp({
+          email: cleanEmail,
+          password,
+          options: {
+            data: {
+              name: cleanName,
+              role: "Consumer",
+              organization: "",
+              product: "",
+              location: "",
             },
-          });
+          },
+        });
 
         if (signupError) {
           throw signupError;
         }
 
-        if (data?.session) {
-          navigate("/dashboard");
+        if (data?.session?.user) {
+          navigate("/dashboard", {
+            replace: true,
+          });
           return;
         }
 
@@ -68,20 +134,36 @@ export default function Login() {
         setMode("login");
         setPassword("");
       } else {
-        const { error: loginError } =
-          await supabase.auth.signInWithPassword({
-            email: cleanEmail,
-            password,
-          });
+        const {
+          data,
+          error: loginError,
+        } =
+          await supabase.auth.signInWithPassword(
+            {
+              email: cleanEmail,
+              password,
+            }
+          );
 
         if (loginError) {
           throw loginError;
         }
 
-        navigate("/dashboard");
+        if (!data?.user) {
+          throw new Error(
+            "Login completed, but no user session was returned."
+          );
+        }
+
+        navigate("/dashboard", {
+          replace: true,
+        });
       }
     } catch (err) {
-      console.error("Authentication error:", err);
+      console.error(
+        "Authentication error:",
+        err
+      );
 
       setError(
         err?.message ||
@@ -93,157 +175,294 @@ export default function Login() {
   };
 
   const switchMode = () => {
+    if (loading) {
+      return;
+    }
+
     setMode((currentMode) =>
-      currentMode === "login" ? "signup" : "login"
+      currentMode === "login"
+        ? "signup"
+        : "login"
     );
 
     setError("");
     setMessage("");
+    setPassword("");
   };
 
-  return (
-    <div className="app-page auth-page">
-      {/* =====================================================
-          LOGIN-PAGE SCOPED STYLES
-          These protect the auth text from mobile/browser
-          color overrides without changing the rest of BISense.
-          ===================================================== */}
-
-      <style>
-        {`
+  if (checkingSession) {
+    return (
+      <div className="app-page auth-page">
+        <style>{`
           .auth-page,
           .auth-page * {
             color-scheme: light;
           }
 
           .auth-page {
-            color: #0F1B33;
+            min-height: 100vh;
+            width: 100%;
+            display: grid;
+            place-items: center;
+            box-sizing: border-box;
+            background: #f8fafc;
+            color: #0f1b33;
+          }
+
+          .auth-session-loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            color: #0f1b33 !important;
+            text-align: center;
+          }
+
+          .auth-session-spinner {
+            width: 34px;
+            height: 34px;
+            border: 3px solid #e5e7eb;
+            border-top-color: #2563eb;
+            border-radius: 50%;
+            animation: authSpin 0.8s linear infinite;
+          }
+
+          .auth-session-loading span {
+            color: #0f1b33 !important;
+            font-size: 14px;
+          }
+
+          @keyframes authSpin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
+        `}</style>
+
+        <div className="auth-session-loading">
+          <div className="auth-session-spinner"></div>
+
+          <span>
+            Checking your session...
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-page auth-page">
+      <style>{`
+        .auth-page,
+        .auth-page * {
+          color-scheme: light;
+        }
+
+        .auth-page {
+          width: 100%;
+          min-height: 100vh;
+          color: #0F1B33;
+          background: #f8fafc;
+          overflow-x: hidden;
+        }
+
+        .auth-page .auth-card {
+          color: #0F1B33 !important;
+        }
+
+        .auth-page .auth-card .logo {
+          color: #0F1B33 !important;
+          -webkit-text-fill-color: #0F1B33 !important;
+          text-decoration: none;
+        }
+
+        .auth-page .auth-card .logo span {
+          color: inherit !important;
+          -webkit-text-fill-color: inherit !important;
+        }
+
+        .auth-page .auth-card .eyebrow {
+          color: #52627A !important;
+          -webkit-text-fill-color: #52627A !important;
+        }
+
+        .auth-page .auth-card h1 {
+          color: #0F1B33 !important;
+          -webkit-text-fill-color: #0F1B33 !important;
+        }
+
+        .auth-page .auth-subtitle {
+          color: #4F607A !important;
+          -webkit-text-fill-color: #4F607A !important;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+
+        .auth-page .form-group {
+          min-width: 0;
+        }
+
+        .auth-page .form-group label {
+          color: #243653 !important;
+          -webkit-text-fill-color: #243653 !important;
+        }
+
+        .auth-page .form-group input {
+          width: 100%;
+          box-sizing: border-box;
+          color: #0F1B33 !important;
+          -webkit-text-fill-color: #0F1B33 !important;
+          background: #FFFFFF !important;
+          caret-color: #2563EB !important;
+          border-color: #d3dae6;
+        }
+
+        .auth-page .form-group input::placeholder {
+          color: #8793A5 !important;
+          -webkit-text-fill-color: #8793A5 !important;
+          opacity: 1 !important;
+        }
+
+        .auth-page .form-group input:focus {
+          color: #0F1B33 !important;
+          -webkit-text-fill-color: #0F1B33 !important;
+          background: #FFFFFF !important;
+        }
+
+        .auth-page .form-group input:-webkit-autofill,
+        .auth-page .form-group input:-webkit-autofill:hover,
+        .auth-page .form-group input:-webkit-autofill:focus {
+          -webkit-text-fill-color: #0F1B33 !important;
+          box-shadow: 0 0 0 1000px #FFFFFF inset !important;
+        }
+
+        .auth-page .auth-switch {
+          color: #30425F !important;
+          -webkit-text-fill-color: #30425F !important;
+        }
+
+        .auth-page .auth-switch span {
+          color: #30425F !important;
+          -webkit-text-fill-color: #30425F !important;
+        }
+
+        .auth-page .auth-switch button {
+          color: #2563EB !important;
+          -webkit-text-fill-color: #2563EB !important;
+          background: transparent !important;
+          cursor: pointer;
+        }
+
+        .auth-page .auth-switch button:disabled {
+          cursor: wait;
+          opacity: 0.65;
+        }
+
+        .auth-page .auth-links {
+          color: #40526D !important;
+          -webkit-text-fill-color: #40526D !important;
+        }
+
+        .auth-page .auth-links a {
+          color: #2563EB !important;
+          -webkit-text-fill-color: #2563EB !important;
+        }
+
+        .auth-page .auth-error {
+          color: #8B3152 !important;
+          -webkit-text-fill-color: #8B3152 !important;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+
+        .auth-page .auth-success {
+          color: #247657 !important;
+          -webkit-text-fill-color: #247657 !important;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+
+        .auth-page .auth-submit,
+        .auth-page .auth-submit * {
+          color: #FFFFFF !important;
+          -webkit-text-fill-color: #FFFFFF !important;
+        }
+
+        .auth-page .auth-submit:disabled {
+          cursor: wait;
+          opacity: 0.7;
+        }
+
+        @media (max-width: 600px) {
+          .auth-page {
+            width: 100%;
+            min-width: 0;
           }
 
           .auth-page .auth-card {
-            color: #0F1B33;
-          }
-
-          .auth-page .auth-card .logo {
+            width: calc(100% - 28px);
+            max-width: 440px;
+            margin: 0 auto;
+            box-sizing: border-box;
             color: #0F1B33 !important;
-            -webkit-text-fill-color: #0F1B33 !important;
-          }
-
-          .auth-page .auth-card .logo span {
-            color: #0F1B33 !important;
-            -webkit-text-fill-color: #0F1B33 !important;
-          }
-
-          .auth-page .auth-card .eyebrow {
-            color: #52627A !important;
-            -webkit-text-fill-color: #52627A !important;
           }
 
           .auth-page .auth-card h1 {
-            color: #0F1B33 !important;
-            -webkit-text-fill-color: #0F1B33 !important;
+            font-size: clamp(
+              30px,
+              8vw,
+              36px
+            ) !important;
+            line-height: 1.08 !important;
           }
 
           .auth-page .auth-subtitle {
-            color: #4F607A !important;
-            -webkit-text-fill-color: #4F607A !important;
+            font-size: 13px !important;
+            line-height: 1.55 !important;
           }
 
           .auth-page .form-group label {
-            color: #243653 !important;
-            -webkit-text-fill-color: #243653 !important;
+            font-size: 12px !important;
           }
 
           .auth-page .form-group input {
-            color: #0F1B33 !important;
-            -webkit-text-fill-color: #0F1B33 !important;
-            background: #FFFFFF !important;
-            caret-color: #2563EB !important;
+            min-height: 46px;
+            font-size: 14px !important;
           }
 
-          .auth-page .form-group input::placeholder {
-            color: #8793A5 !important;
-            -webkit-text-fill-color: #8793A5 !important;
-            opacity: 1 !important;
+          .auth-page .auth-switch,
+          .auth-page .auth-links {
+            font-size: 12px !important;
           }
 
-          .auth-page .auth-switch {
-            color: #30425F !important;
-            -webkit-text-fill-color: #30425F !important;
+          .auth-page .auth-submit {
+            width: 100%;
+            min-height: 47px;
+          }
+        }
+
+        @media (max-width: 380px) {
+          .auth-page .auth-card {
+            width: calc(100% - 20px);
           }
 
-          .auth-page .auth-switch span {
-            color: #30425F !important;
-            -webkit-text-fill-color: #30425F !important;
+          .auth-page .auth-card h1 {
+            font-size: 29px !important;
           }
 
-          .auth-page .auth-switch button {
-            color: #2563EB !important;
-            -webkit-text-fill-color: #2563EB !important;
-            background: transparent !important;
+          .auth-page .auth-subtitle {
+            font-size: 12px !important;
           }
 
           .auth-page .auth-links {
-            color: #40526D !important;
-            -webkit-text-fill-color: #40526D !important;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
           }
-
-          .auth-page .auth-links a {
-            color: #2563EB !important;
-            -webkit-text-fill-color: #2563EB !important;
-          }
-
-          .auth-page .auth-error {
-            color: #8B3152 !important;
-            -webkit-text-fill-color: #8B3152 !important;
-          }
-
-          .auth-page .auth-success {
-            color: #247657 !important;
-            -webkit-text-fill-color: #247657 !important;
-          }
-
-          .auth-page .auth-submit,
-          .auth-page .auth-submit * {
-            color: #FFFFFF !important;
-            -webkit-text-fill-color: #FFFFFF !important;
-          }
-
-          @media (max-width: 600px) {
-            .auth-page {
-              width: 100%;
-              min-width: 320px;
-            }
-
-            .auth-page .auth-card {
-              color: #0F1B33 !important;
-            }
-
-            .auth-page .auth-card h1 {
-              font-size: 34px !important;
-              line-height: 1.05 !important;
-            }
-
-            .auth-page .auth-subtitle {
-              font-size: 12px !important;
-              line-height: 1.5 !important;
-            }
-
-            .auth-page .form-group label {
-              font-size: 11px !important;
-            }
-
-            .auth-page .form-group input {
-              font-size: 13px !important;
-            }
-
-            .auth-page .auth-switch,
-            .auth-page .auth-links {
-              font-size: 11px !important;
-            }
-          }
-        `}
-      </style>
+        }
+      `}</style>
 
       <main className="auth-page">
         <div className="auth-card">
@@ -260,11 +479,15 @@ export default function Login() {
           {/* Heading */}
 
           <p className="eyebrow">
-            {isSignup ? "CREATE YOUR ACCOUNT" : "WELCOME BACK"}
+            {isSignup
+              ? "CREATE YOUR ACCOUNT"
+              : "WELCOME BACK"}
           </p>
 
           <h1>
-            {isSignup ? "Join BISense" : "Login to BISense"}
+            {isSignup
+              ? "Join BISense"
+              : "Login to BISense"}
           </h1>
 
           <p className="auth-subtitle">
@@ -281,16 +504,19 @@ export default function Login() {
           >
             {isSignup && (
               <div className="form-group">
-                <label htmlFor="name">
+                <label htmlFor="login-name">
                   Full Name
                 </label>
 
                 <input
-                  id="name"
+                  id="login-name"
+                  name="name"
                   type="text"
                   value={name}
                   onChange={(event) =>
-                    setName(event.target.value)
+                    setName(
+                      event.target.value
+                    )
                   }
                   placeholder="Enter your full name"
                   autoComplete="name"
@@ -300,34 +526,41 @@ export default function Login() {
             )}
 
             <div className="form-group">
-              <label htmlFor="email">
+              <label htmlFor="login-email">
                 Email
               </label>
 
               <input
-                id="email"
+                id="login-email"
+                name="email"
                 type="email"
                 value={email}
                 onChange={(event) =>
-                  setEmail(event.target.value)
+                  setEmail(
+                    event.target.value
+                  )
                 }
                 placeholder="Enter your email"
                 autoComplete="email"
+                inputMode="email"
                 disabled={loading}
               />
             </div>
 
             <div className="form-group">
-              <label htmlFor="password">
+              <label htmlFor="login-password">
                 Password
               </label>
 
               <input
-                id="password"
+                id="login-password"
+                name="password"
                 type="password"
                 value={password}
                 onChange={(event) =>
-                  setPassword(event.target.value)
+                  setPassword(
+                    event.target.value
+                  )
                 }
                 placeholder="Enter your password"
                 autoComplete={
@@ -384,7 +617,9 @@ export default function Login() {
               onClick={switchMode}
               disabled={loading}
             >
-              {isSignup ? "Login" : "Create one"}
+              {isSignup
+                ? "Login"
+                : "Create one"}
             </button>
           </div>
 

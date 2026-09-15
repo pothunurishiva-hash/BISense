@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "../App.css";
 
 import Navbar from "../components/Navbar";
@@ -17,6 +17,14 @@ function ProductAnalyzer() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    return () => {
+      if (image) {
+        URL.revokeObjectURL(image);
+      }
+    };
+  }, [image]);
 
   const handleImage = (selectedFile) => {
     if (!selectedFile) return;
@@ -52,6 +60,7 @@ function ProductAnalyzer() {
 
   const handleDrop = (event) => {
     event.preventDefault();
+    event.stopPropagation();
 
     const droppedFile = event.dataTransfer.files?.[0];
 
@@ -61,7 +70,7 @@ function ProductAnalyzer() {
   };
 
   const analyzeProduct = async () => {
-    if (!file) return;
+    if (!file || isAnalyzing) return;
 
     setIsAnalyzing(true);
     setResult(null);
@@ -71,29 +80,57 @@ function ProductAnalyzer() {
       const formData = new FormData();
       formData.append("file", file);
 
-      const response = await fetch(
-        `${API_URL}/api/product/analyze`,
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
+      const response = await fetch(`${API_URL}/api/product/analyze`, {
+        method: "POST",
+        body: formData,
+        cache: "no-store",
+      });
 
-      const data = await response.json();
+      let data = {};
 
-      if (!response.ok) {
+      try {
+        data = await response.json();
+      } catch {
         throw new Error(
-          data.detail || "Product analysis failed."
+          `Server returned an invalid response (${response.status}).`
         );
       }
 
-      setResult(data);
+      if (!response.ok) {
+        throw new Error(
+          data?.detail ||
+            data?.message ||
+            "Product analysis failed. Please try again."
+        );
+      }
+
+      if (!data?.product) {
+        throw new Error(
+          "The backend returned an incomplete product analysis."
+        );
+      }
+
+      setResult({
+        ...data,
+        product: {
+          name: data.product?.name || "Unknown product",
+          category: data.product?.category || "Unknown category",
+          confidence: data.product?.confidence || "Low",
+          description:
+            data.product?.description ||
+            "No additional visible description was returned.",
+        },
+        standards: Array.isArray(data.standards) ? data.standards : [],
+        disclaimer:
+          data.disclaimer ||
+          "This result is AI-assisted guidance and does not prove BIS certification.",
+      });
     } catch (err) {
-      console.error(err);
+      console.error("Product analysis error:", err);
 
       setError(
-        err.message ||
-          "Unable to analyze the product. Make sure the FastAPI backend is running."
+        err?.message ||
+          "Unable to analyze the product. Make sure the backend is running."
       );
     } finally {
       setIsAnalyzing(false);
@@ -117,19 +154,18 @@ function ProductAnalyzer() {
   };
 
   return (
-    <div className="app-page">
+    <div className="app-page product-analyzer-page">
       <Navbar />
 
-      <main className="page-container">
-        <div className="page-intro">
+      <main className="page-container product-analyzer-container">
+        <div className="page-intro product-analyzer-intro">
           <p className="eyebrow">AI PRODUCT ANALYSIS</p>
 
           <h1>Understand a product from an image.</h1>
 
           <p>
-            Upload a product image and BISense will identify the
-            visible product information and search for potentially
-            relevant BIS standards.
+            Upload a product image and BISense will identify visible product
+            information and search for potentially relevant BIS standards.
           </p>
         </div>
 
@@ -138,21 +174,27 @@ function ProductAnalyzer() {
             {!image ? (
               <div
                 className="drop-zone"
-                onDragOver={(event) =>
-                  event.preventDefault()
-                }
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
                 onDrop={handleDrop}
-                onClick={() =>
-                  fileInputRef.current?.click()
-                }
+                onClick={() => fileInputRef.current?.click()}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
               >
                 <div className="upload-icon">📷</div>
 
                 <h3>Drop a product image here</h3>
 
                 <p>
-                  Drag and drop an image or click to browse your
-                  device.
+                  Drag and drop an image or click to browse your device.
                 </p>
 
                 <span>PNG, JPG, WEBP</span>
@@ -161,14 +203,14 @@ function ProductAnalyzer() {
               <div className="image-preview-container">
                 <img
                   src={image}
-                  alt="Uploaded product"
+                  alt="Uploaded product preview"
                   className="preview-image"
                 />
 
                 <div className="image-file-info">
-                  <span>{fileName}</span>
+                  <span title={fileName}>{fileName}</span>
 
-                  <button onClick={removeImage}>
+                  <button type="button" onClick={removeImage}>
                     Remove
                   </button>
                 </div>
@@ -185,24 +227,21 @@ function ProductAnalyzer() {
 
             <div className="upload-actions">
               <button
+                type="button"
                 className="secondary-btn large"
-                onClick={() =>
-                  fileInputRef.current?.click()
-                }
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isAnalyzing}
               >
-                {image
-                  ? "Choose Another Image"
-                  : "Choose Image"}
+                {image ? "Choose Another Image" : "Choose Image"}
               </button>
 
               <button
+                type="button"
                 className="primary-btn large"
                 onClick={analyzeProduct}
                 disabled={!file || isAnalyzing}
               >
-                {isAnalyzing
-                  ? "Analyzing..."
-                  : "Analyze Product →"}
+                {isAnalyzing ? "Analyzing..." : "Analyze Product →"}
               </button>
             </div>
 
@@ -211,7 +250,7 @@ function ProductAnalyzer() {
             )}
 
             {error && (
-              <div className="warning-box large-warning">
+              <div className="warning-box large-warning" role="alert">
                 {error}
               </div>
             )}
@@ -220,9 +259,7 @@ function ProductAnalyzer() {
           <section className="analysis-card">
             {!result ? (
               <>
-                <p className="eyebrow">
-                  WHAT WE ANALYZE
-                </p>
+                <p className="eyebrow">WHAT WE ANALYZE</p>
 
                 <h2>AI-assisted product insights.</h2>
 
@@ -230,13 +267,11 @@ function ProductAnalyzer() {
                   <span>01</span>
 
                   <div>
-                    <strong>
-                      Product identification
-                    </strong>
+                    <strong>Product identification</strong>
 
                     <p>
-                      Gemini analyzes the visible product and
-                      estimates its type and category.
+                      Gemini analyzes the visible product and estimates its
+                      type and category.
                     </p>
                   </div>
                 </div>
@@ -248,8 +283,8 @@ function ProductAnalyzer() {
                     <strong>BIS relevance</strong>
 
                     <p>
-                      BISense searches its standards database
-                      using the identified product information.
+                      BISense searches its standards database using the
+                      identified product information.
                     </p>
                   </div>
                 </div>
@@ -258,20 +293,18 @@ function ProductAnalyzer() {
                   <span>03</span>
 
                   <div>
-                    <strong>
-                      Verification guidance
-                    </strong>
+                    <strong>Verification guidance</strong>
 
                     <p>
-                      Potentially relevant standards are shown
-                      with their BIS source information.
+                      Potentially relevant standards are shown with their BIS
+                      source information.
                     </p>
                   </div>
                 </div>
 
                 <div className="warning-box">
-                  An image alone cannot prove that a product is
-                  BIS-certified or that a BIS mark is genuine.
+                  An image alone cannot prove that a product is BIS-certified
+                  or that a BIS mark is genuine.
                 </div>
               </>
             ) : (
@@ -284,26 +317,26 @@ function ProductAnalyzer() {
 
                     <p>
                       Confidence:{" "}
-                      {result.product.confidence || "Low"}
+                      {result.product?.confidence || "Low"}
                     </p>
                   </div>
                 </div>
 
-                <p className="eyebrow">
-                  IDENTIFIED PRODUCT
-                </p>
+                <p className="eyebrow">IDENTIFIED PRODUCT</p>
 
-                <h2>{result.product.name}</h2>
+                <h2>
+                  {result.product?.name || "Unknown product"}
+                </h2>
 
                 <div className="result-highlight">
                   <span>CATEGORY</span>
 
                   <strong>
-                    {result.product.category}
+                    {result.product?.category || "Unknown category"}
                   </strong>
 
                   <p>
-                    {result.product.description ||
+                    {result.product?.description ||
                       "No additional visible description was returned."}
                   </p>
                 </div>
@@ -313,7 +346,7 @@ function ProductAnalyzer() {
                     <span>Product</span>
 
                     <strong>
-                      {result.product.name}
+                      {result.product?.name || "Unknown"}
                     </strong>
                   </div>
 
@@ -321,7 +354,7 @@ function ProductAnalyzer() {
                     <span>Category</span>
 
                     <strong>
-                      {result.product.category}
+                      {result.product?.category || "Unknown"}
                     </strong>
                   </div>
 
@@ -329,7 +362,7 @@ function ProductAnalyzer() {
                     <span>Potential BIS matches</span>
 
                     <strong>
-                      {result.standards.length}
+                      {result.standards?.length || 0}
                     </strong>
                   </div>
                 </div>
@@ -339,65 +372,85 @@ function ProductAnalyzer() {
                     POTENTIALLY RELEVANT STANDARDS
                   </p>
 
-                  {result.standards.length > 0 ? (
-                    result.standards.map((standard) => (
-                      <div
-                        className="next-step"
-                        key={standard.number}
-                      >
-                        <span>•</span>
+                  {result.standards?.length > 0 ? (
+                    result.standards.map((standard, index) => {
+                      const standardNumber =
+                        standard?.number || standard?.standard_number;
 
-                        <div>
-                          <strong>
-                            {standard.number}
-                          </strong>
+                      const standardTitle =
+                        standard?.title ||
+                        standard?.name ||
+                        "Standard details unavailable";
 
-                          <p>
-                            {standard.title}
-                          </p>
+                      const standardCategory =
+                        standard?.category || "Uncategorized";
 
-                          <p>
-                            {standard.category}
-                            {standard.edition_year
-                              ? ` · ${standard.edition_year}`
-                              : ""}
-                          </p>
+                      const editionYear =
+                        standard?.edition_year || standard?.year;
 
-                          <a
-                            href={`/standard/${encodeURIComponent(
-                              standard.number
-                            )}`}
-                            className="text-btn"
-                          >
-                            View Standard Details →
-                          </a>
+                      return (
+                        <div
+                          className="next-step"
+                          key={
+                            standardNumber ||
+                            `${standardTitle}-${index}`
+                          }
+                        >
+                          <span>•</span>
+
+                          <div>
+                            <strong>
+                              {standardNumber || "Standard"}
+                            </strong>
+
+                            <p>{standardTitle}</p>
+
+                            <p>
+                              {standardCategory}
+                              {editionYear
+                                ? ` · ${editionYear}`
+                                : ""}
+                            </p>
+
+                            {standardNumber && (
+                              <a
+                                href={`/standard/${encodeURIComponent(
+                                  standardNumber
+                                )}`}
+                                className="text-btn"
+                              >
+                                View Standard Details →
+                              </a>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <p className="result-intro">
-                      No strong match was found in the
-                      current BISense database.
+                      No strong match was found in the current BISense
+                      database.
                     </p>
                   )}
                 </div>
 
                 <div className="result-actions">
                   <a
-                    href="/search"
+                    href="/standards"
                     className="primary-btn"
                   >
                     Search Standards →
                   </a>
 
                   <a
-                    href="/ai"
+                    href="/copilot"
                     className="secondary-btn"
                   >
                     Ask BIS AI
                   </a>
 
                   <button
+                    type="button"
                     className="secondary-btn"
                     onClick={() => window.print()}
                   >
@@ -405,6 +458,7 @@ function ProductAnalyzer() {
                   </button>
 
                   <button
+                    type="button"
                     className="secondary-btn"
                     onClick={removeImage}
                   >
@@ -431,9 +485,7 @@ function ProductAnalyzer() {
             <div>
               <span>01</span>
               <strong>Upload</strong>
-              <p>
-                Provide a clear product image.
-              </p>
+              <p>Provide a clear product image.</p>
             </div>
 
             <div>
@@ -456,8 +508,7 @@ function ProductAnalyzer() {
               <span>04</span>
               <strong>Verify</strong>
               <p>
-                Check important information against official BIS
-                sources.
+                Check important information against official BIS sources.
               </p>
             </div>
           </div>
@@ -465,6 +516,278 @@ function ProductAnalyzer() {
       </main>
 
       <Footer />
+
+      <style>{`
+        .product-analyzer-page {
+          width: 100%;
+          min-height: 100vh;
+          overflow-x: hidden;
+        }
+
+        .product-analyzer-container {
+          width: 100%;
+          max-width: 1400px;
+          margin: 0 auto;
+          box-sizing: border-box;
+        }
+
+        .product-analyzer-intro h1,
+        .product-analyzer-intro p,
+        .upload-card h3,
+        .upload-card p,
+        .analysis-card h2,
+        .analysis-card p,
+        .product-analyzer-info h2,
+        .workflow p,
+        .workflow strong,
+        .analysis-item strong,
+        .image-file-info span,
+        .next-step strong,
+        .next-step p,
+        .result-highlight strong,
+        .analysis-result-list strong,
+        .analysis-result-list span {
+          color: #111827;
+        }
+
+        .product-analyzer-intro h1,
+        .analysis-card h2,
+        .product-analyzer-info h2 {
+          color: #111827 !important;
+        }
+
+        .upload-card,
+        .analysis-card,
+        .product-analyzer-info {
+          box-sizing: border-box;
+        }
+
+        .drop-zone {
+          min-height: 300px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          cursor: pointer;
+        }
+
+        .drop-zone:focus {
+          outline: 2px solid #111827;
+          outline-offset: 4px;
+        }
+
+        .image-preview-container {
+          width: 100%;
+          overflow: hidden;
+          box-sizing: border-box;
+        }
+
+        .preview-image {
+          display: block;
+          width: 100%;
+          max-width: 100%;
+          max-height: 480px;
+          object-fit: contain;
+          border-radius: 14px;
+        }
+
+        .image-file-info {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-top: 12px;
+        }
+
+        .image-file-info span {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .image-file-info button {
+          flex-shrink: 0;
+          cursor: pointer;
+        }
+
+        .upload-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 12px;
+          margin-top: 18px;
+        }
+
+        .upload-actions button,
+        .result-actions a,
+        .result-actions button {
+          box-sizing: border-box;
+        }
+
+        .result-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+        }
+
+        .result-actions a {
+          text-decoration: none;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .next-step {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+        }
+
+        .next-step > div {
+          min-width: 0;
+          flex: 1;
+        }
+
+        .next-step p {
+          overflow-wrap: anywhere;
+        }
+
+        .text-btn {
+          display: inline-block;
+          margin-top: 6px;
+          word-break: break-word;
+        }
+
+        @media (max-width: 900px) {
+          .analyzer-grid {
+            grid-template-columns: 1fr !important;
+          }
+
+          .upload-actions,
+          .result-actions {
+            width: 100%;
+          }
+
+          .upload-actions > *,
+          .result-actions > * {
+            flex: 1 1 100%;
+            width: 100%;
+          }
+
+          .workflow {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+        }
+
+        @media (max-width: 600px) {
+          .page-container {
+            width: 100% !important;
+            padding-left: 16px !important;
+            padding-right: 16px !important;
+            box-sizing: border-box;
+          }
+
+          .product-analyzer-intro h1 {
+            font-size: clamp(28px, 8vw, 38px) !important;
+            line-height: 1.12 !important;
+          }
+
+          .product-analyzer-intro > p:last-child {
+            font-size: 15px !important;
+            line-height: 1.6 !important;
+          }
+
+          .upload-card,
+          .analysis-card,
+          .product-analyzer-info {
+            width: 100% !important;
+            box-sizing: border-box;
+          }
+
+          .drop-zone {
+            min-height: 240px;
+            padding: 24px 14px;
+            box-sizing: border-box;
+          }
+
+          .preview-image {
+            max-height: 300px;
+          }
+
+          .upload-actions {
+            flex-direction: column;
+          }
+
+          .upload-actions > button,
+          .result-actions > *,
+          .result-actions button {
+            width: 100% !important;
+            min-width: 0;
+          }
+
+          .workflow {
+            grid-template-columns: 1fr !important;
+          }
+
+          .analysis-item {
+            display: flex !important;
+            gap: 12px;
+          }
+
+          .analysis-item > div {
+            min-width: 0;
+          }
+
+          .analysis-item p,
+          .next-step p,
+          .warning-box {
+            overflow-wrap: anywhere;
+            word-break: break-word;
+          }
+
+          .analysis-result-list {
+            width: 100%;
+          }
+
+          .analysis-result-list > div {
+            min-width: 0;
+          }
+
+          .image-file-info {
+            align-items: flex-start;
+          }
+
+          .image-file-info button {
+            padding: 8px 10px;
+          }
+        }
+
+        @media print {
+          .product-analyzer-page nav,
+          .product-analyzer-page footer,
+          .upload-card,
+          .product-analyzer-info,
+          .result-actions {
+            display: none !important;
+          }
+
+          .product-analyzer-page {
+            background: #fff !important;
+          }
+
+          .product-analyzer-container {
+            max-width: 100% !important;
+            padding: 0 !important;
+          }
+
+          .analysis-card {
+            width: 100% !important;
+            box-shadow: none !important;
+            border: none !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

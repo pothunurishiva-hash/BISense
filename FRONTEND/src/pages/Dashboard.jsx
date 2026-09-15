@@ -13,7 +13,12 @@ const REPORTS_KEY = "bisense_compliance_reports";
 function readStorage(key, fallback = []) {
   try {
     const value = localStorage.getItem(key);
-    const parsed = value ? JSON.parse(value) : fallback;
+
+    if (!value) {
+      return fallback;
+    }
+
+    const parsed = JSON.parse(value);
 
     return Array.isArray(parsed) ? parsed : fallback;
   } catch (error) {
@@ -34,7 +39,7 @@ function formatTime(timestamp) {
   }
 
   const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
+  const diffMs = Math.max(0, now.getTime() - date.getTime());
 
   const diffMinutes = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
@@ -63,6 +68,16 @@ function formatTime(timestamp) {
   return date.toLocaleDateString();
 }
 
+function getProgress(value) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(100, number));
+}
+
 function Dashboard() {
   const navigate = useNavigate();
 
@@ -76,6 +91,7 @@ function Dashboard() {
   const [userName, setUserName] = useState("BISense User");
   const [userEmail, setUserEmail] = useState("");
   const [loadingUser, setLoadingUser] = useState(true);
+  const [modeSaving, setModeSaving] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
@@ -93,10 +109,21 @@ function Dashboard() {
   }, []);
 
   const loadDashboardData = () => {
-    setSavedStandards(readStorage(SAVED_STANDARDS_KEY));
-    setRecentSearches(readStorage(SEARCH_HISTORY_KEY));
-    setRecentChats(readStorage(CHAT_HISTORY_KEY));
-    setReports(readStorage(REPORTS_KEY));
+    setSavedStandards(
+      readStorage(SAVED_STANDARDS_KEY)
+    );
+
+    setRecentSearches(
+      readStorage(SEARCH_HISTORY_KEY)
+    );
+
+    setRecentChats(
+      readStorage(CHAT_HISTORY_KEY)
+    );
+
+    setReports(
+      readStorage(REPORTS_KEY)
+    );
   };
 
   const loadUser = async () => {
@@ -113,7 +140,7 @@ function Dashboard() {
       }
 
       if (!user) {
-        navigate("/login");
+        navigate("/login", { replace: true });
         return;
       }
 
@@ -126,27 +153,70 @@ function Dashboard() {
       setUserName(name);
       setUserEmail(user.email || "");
 
-      if (metadata.role === "Manufacturer") {
-        setActiveMode("Manufacturer");
-      } else {
-        setActiveMode("Consumer");
-      }
+      setActiveMode(
+        metadata.role === "Manufacturer"
+          ? "Manufacturer"
+          : "Consumer"
+      );
     } catch (error) {
       console.error("Unable to load user:", error);
-      navigate("/login");
+      navigate("/login", { replace: true });
     } finally {
       setLoadingUser(false);
     }
   };
 
+  const changeMode = async (mode) => {
+    if (
+      mode === activeMode ||
+      modeSaving
+    ) {
+      return;
+    }
+
+    setModeSaving(true);
+
+    const previousMode = activeMode;
+    setActiveMode(mode);
+
+    try {
+      const { error } =
+        await supabase.auth.updateUser({
+          data: {
+            role: mode,
+          },
+        });
+
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      console.error(
+        "Unable to save workspace mode:",
+        error
+      );
+
+      setActiveMode(previousMode);
+    } finally {
+      setModeSaving(false);
+    }
+  };
+
   const removeSavedStandard = (number) => {
     try {
-      const current = readStorage(SAVED_STANDARDS_KEY);
+      const current = readStorage(
+        SAVED_STANDARDS_KEY
+      );
+
+      const target = String(number || "")
+        .trim()
+        .toUpperCase();
 
       const updated = current.filter(
         (item) =>
-          String(item.number || "").toUpperCase() !==
-          String(number || "").toUpperCase()
+          String(item?.number || "")
+            .trim()
+            .toUpperCase() !== target
       );
 
       localStorage.setItem(
@@ -155,46 +225,84 @@ function Dashboard() {
       );
 
       setSavedStandards(updated);
+
+      window.dispatchEvent(new Event("storage"));
     } catch (error) {
-      console.error("Unable to remove saved standard:", error);
+      console.error(
+        "Unable to remove saved standard:",
+        error
+      );
     }
   };
 
   const clearActivity = () => {
     try {
-      localStorage.removeItem(SEARCH_HISTORY_KEY);
-      localStorage.removeItem(CHAT_HISTORY_KEY);
+      localStorage.removeItem(
+        SEARCH_HISTORY_KEY
+      );
+
+      localStorage.removeItem(
+        CHAT_HISTORY_KEY
+      );
 
       setRecentSearches([]);
       setRecentChats([]);
+
+      window.dispatchEvent(new Event("storage"));
     } catch (error) {
-      console.error("Unable to clear activity:", error);
+      console.error(
+        "Unable to clear activity:",
+        error
+      );
     }
   };
 
   if (loadingUser) {
     return (
-      <div className="app-page">
+      <div className="app-page dashboard-page">
         <Navbar />
 
         <main className="page-container">
-          <div className="loading-container">
+          <div className="loading-container dashboard-loading">
             <div className="loading-spinner"></div>
-            <span>Loading your BISense workspace...</span>
+
+            <span>
+              Loading your BISense workspace...
+            </span>
           </div>
         </main>
+
+        <style>{`
+          .dashboard-page {
+            min-height: 100vh;
+            overflow-x: hidden;
+            background: #f8fafc;
+            color: #111827;
+          }
+
+          .dashboard-loading {
+            color: #111827 !important;
+          }
+
+          .dashboard-loading span {
+            color: #111827 !important;
+          }
+        `}</style>
       </div>
     );
   }
 
   return (
-    <div className="app-page">
+    <div className="app-page dashboard-page">
       <Navbar />
 
-      <main className="page-container">
-        {/* Welcome */}
+      <main className="page-container dashboard-container">
+        {/* =====================================================
+            WELCOME
+        ====================================================== */}
+
         <section className="dashboard-welcome">
-          <div>
+          <div className="dashboard-welcome-content">
             <p className="eyebrow">
               PERSONAL DASHBOARD
             </p>
@@ -204,9 +312,10 @@ function Dashboard() {
             </h1>
 
             <p>
-              Welcome back to your BISense workspace. Manage
-              your saved standards, research history,
-              conversations and compliance work from one place.
+              Welcome back to your BISense workspace.
+              Manage your saved standards, research
+              history, conversations and compliance work
+              from one place.
             </p>
 
             {userEmail && (
@@ -218,15 +327,18 @@ function Dashboard() {
 
           <Link
             to="/profile"
-            className="primary-btn"
+            className="primary-btn dashboard-profile-btn"
           >
             Edit Profile
           </Link>
         </section>
 
-        {/* Workspace Mode */}
+        {/* =====================================================
+            WORKSPACE MODE
+        ====================================================== */}
+
         <section className="dashboard-mode">
-          <div>
+          <div className="dashboard-mode-text">
             <p className="eyebrow">
               YOUR CURRENT MODE
             </p>
@@ -250,8 +362,9 @@ function Dashboard() {
                   : ""
               }
               onClick={() =>
-                setActiveMode("Consumer")
+                changeMode("Consumer")
               }
+              disabled={modeSaving}
             >
               🛒 Consumer
             </button>
@@ -264,42 +377,65 @@ function Dashboard() {
                   : ""
               }
               onClick={() =>
-                setActiveMode("Manufacturer")
+                changeMode("Manufacturer")
               }
+              disabled={modeSaving}
             >
               🏭 Manufacturer
             </button>
           </div>
         </section>
 
-        {/* Stats */}
+        {/* =====================================================
+            STATS
+        ====================================================== */}
+
         <section className="dashboard-stats">
           <div>
             <span>SAVED STANDARDS</span>
-            <strong>{savedStandards.length}</strong>
-            <p>Standards in your library</p>
+            <strong>
+              {savedStandards.length}
+            </strong>
+            <p>
+              Standards in your library
+            </p>
           </div>
 
           <div>
             <span>RECENT SEARCHES</span>
-            <strong>{recentSearches.length}</strong>
-            <p>Latest research activity</p>
+            <strong>
+              {recentSearches.length}
+            </strong>
+            <p>
+              Latest research activity
+            </p>
           </div>
 
           <div>
             <span>AI CONVERSATIONS</span>
-            <strong>{recentChats.length}</strong>
-            <p>Recent conversations</p>
+            <strong>
+              {recentChats.length}
+            </strong>
+            <p>
+              Recent conversations
+            </p>
           </div>
 
           <div>
             <span>REPORTS</span>
-            <strong>{reports.length}</strong>
-            <p>Compliance reports</p>
+            <strong>
+              {reports.length}
+            </strong>
+            <p>
+              Compliance reports
+            </p>
           </div>
         </section>
 
-        {/* Saved Standards + Recent Searches */}
+        {/* =====================================================
+            SAVED STANDARDS + SEARCHES
+        ====================================================== */}
+
         <section className="dashboard-grid">
           <div className="dashboard-card">
             <div className="card-heading">
@@ -329,54 +465,63 @@ function Dashboard() {
                   </p>
                 </div>
               ) : (
-                savedStandards.map((standard) => (
-                  <div
-                    className="saved-standard-item"
-                    key={standard.number}
-                  >
-                    <div>
-                      <span>
-                        {standard.number}
-                      </span>
+                savedStandards.map(
+                  (standard, index) => {
+                    const number =
+                      standard?.number ||
+                      `standard-${index}`;
 
-                      <strong>
-                        {standard.title ||
-                          "Untitled Standard"}
-                      </strong>
-
-                      <p>
-                        {standard.category ||
-                          "General"}
-
-                        {standard.edition_year
-                          ? ` · ${standard.edition_year}`
-                          : ""}
-                      </p>
-                    </div>
-
-                    <div className="saved-standard-actions">
-                      <Link
-                        to={`/standard/${encodeURIComponent(
-                          standard.number
-                        )}`}
+                    return (
+                      <div
+                        className="saved-standard-item"
+                        key={`${number}-${index}`}
                       >
-                        Open
-                      </Link>
+                        <div className="saved-standard-content">
+                          <span>
+                            {number}
+                          </span>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          removeSavedStandard(
-                            standard.number
-                          )
-                        }
-                        title="Remove saved standard"
-                      >
-                        ☆
-                      </button>
-                    </div>
-                  </div>
-                ))
+                          <strong>
+                            {standard?.title ||
+                              "Untitled Standard"}
+                          </strong>
+
+                          <p>
+                            {standard?.category ||
+                              "General"}
+
+                            {standard?.edition_year
+                              ? ` · ${standard.edition_year}`
+                              : ""}
+                          </p>
+                        </div>
+
+                        <div className="saved-standard-actions">
+                          <Link
+                            to={`/standard/${encodeURIComponent(
+                              number
+                            )}`}
+                          >
+                            Open
+                          </Link>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              removeSavedStandard(
+                                number
+                              )
+                            }
+                            title="Remove saved standard"
+                            aria-label={`Remove ${number}`}
+                          >
+                            ☆
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+                )
               )}
             </div>
           </div>
@@ -409,39 +554,58 @@ function Dashboard() {
                   </p>
                 </div>
               ) : (
-                recentSearches.map((item, index) => (
-                  <Link
-                    className="dashboard-list-item dashboard-link-item"
-                    to={`/standards?q=${encodeURIComponent(
-                      item.query || ""
-                    )}`}
-                    key={`${item.query}-${item.timestamp}-${index}`}
-                  >
-                    <div>
-                      <strong>
-                        {item.query}
-                      </strong>
+                recentSearches.map(
+                  (item, index) => {
+                    const query =
+                      String(
+                        item?.query || ""
+                      ).trim();
 
-                      <span>
-                        {item.resultCount ?? 0} result
-                        {(item.resultCount ?? 0) ===
-                        1
-                          ? ""
-                          : "s"}
-                      </span>
-                    </div>
+                    const resultCount =
+                      Number(
+                        item?.resultCount
+                      ) || 0;
 
-                    <time>
-                      {formatTime(item.timestamp)}
-                    </time>
-                  </Link>
-                ))
+                    return (
+                      <Link
+                        className="dashboard-list-item dashboard-link-item"
+                        to={`/standards?q=${encodeURIComponent(
+                          query
+                        )}`}
+                        key={`${query}-${item?.timestamp || ""}-${index}`}
+                      >
+                        <div>
+                          <strong>
+                            {query ||
+                              "Standards search"}
+                          </strong>
+
+                          <span>
+                            {resultCount} result
+                            {resultCount === 1
+                              ? ""
+                              : "s"}
+                          </span>
+                        </div>
+
+                        <time>
+                          {formatTime(
+                            item?.timestamp
+                          )}
+                        </time>
+                      </Link>
+                    );
+                  }
+                )
               )}
             </div>
           </div>
         </section>
 
-        {/* AI Conversations */}
+        {/* =====================================================
+            AI CONVERSATIONS
+        ====================================================== */}
+
         <section className="dashboard-card dashboard-full-card">
           <div className="card-heading">
             <div>
@@ -449,7 +613,9 @@ function Dashboard() {
                 AI ASSISTANT
               </p>
 
-              <h2>Recent conversations</h2>
+              <h2>
+                Recent conversations
+              </h2>
             </div>
 
             <Link to="/copilot">
@@ -465,35 +631,50 @@ function Dashboard() {
                 </strong>
 
                 <p>
-                  Questions you ask the BIS AI assistant
-                  will appear here.
+                  Questions you ask the BIS AI
+                  assistant will appear here.
                 </p>
               </div>
             ) : (
-              recentChats.map((chat, index) => (
-                <Link
-                  to="/copilot"
-                  className="conversation-card"
-                  key={`${chat.query || chat.title}-${chat.timestamp}-${index}`}
-                >
-                  <span>✦</span>
+              recentChats.map(
+                (chat, index) => {
+                  const title =
+                    String(
+                      chat?.query ||
+                        chat?.title ||
+                        ""
+                    ).trim();
 
-                  <strong>
-                    {chat.query ||
-                      chat.title ||
-                      "BIS AI conversation"}
-                  </strong>
+                  return (
+                    <Link
+                      to="/copilot"
+                      className="conversation-card"
+                      key={`${title}-${chat?.timestamp || ""}-${index}`}
+                    >
+                      <span>✦</span>
 
-                  <p>
-                    {formatTime(chat.timestamp)}
-                  </p>
-                </Link>
-              ))
+                      <strong>
+                        {title ||
+                          "BIS AI conversation"}
+                      </strong>
+
+                      <p>
+                        {formatTime(
+                          chat?.timestamp
+                        )}
+                      </p>
+                    </Link>
+                  );
+                }
+              )
             )}
           </div>
         </section>
 
-        {/* Compliance Reports */}
+        {/* =====================================================
+            COMPLIANCE REPORTS
+        ====================================================== */}
+
         <section className="dashboard-card dashboard-full-card">
           <div className="card-heading">
             <div>
@@ -501,7 +682,9 @@ function Dashboard() {
                 WORKSPACE
               </p>
 
-              <h2>Compliance reports</h2>
+              <h2>
+                Compliance reports
+              </h2>
             </div>
 
             <Link to="/compliance">
@@ -522,78 +705,81 @@ function Dashboard() {
                 </p>
               </div>
             ) : (
-              reports.map((report, index) => {
-                const progress = Math.max(
-                  0,
-                  Math.min(
-                    100,
-                    Number(report.progress) || 0
-                  )
-                );
+              reports.map(
+                (report, index) => {
+                  const progress =
+                    getProgress(
+                      report?.progress
+                    );
 
-                return (
-                  <div
-                    className="report-row dashboard-report"
-                    key={`${report.title}-${report.timestamp}-${index}`}
-                  >
-                    <div className="report-info">
-                      <strong>
-                        {report.title ||
-                          "Compliance Review"}
-                      </strong>
+                  return (
+                    <div
+                      className="report-row dashboard-report"
+                      key={`${report?.title || "report"}-${report?.timestamp || ""}-${index}`}
+                    >
+                      <div className="report-info">
+                        <strong>
+                          {report?.title ||
+                            "Compliance Review"}
+                        </strong>
 
-                      <span>
-                        {report.standard ||
-                          "Standard not selected"}
-                        {" · "}
-                        {formatTime(
-                          report.timestamp
-                        )}
-                      </span>
-                    </div>
-
-                    <div className="report-progress">
-                      <div className="report-progress-track">
-                        <div
-                          style={{
-                            width: `${progress}%`,
-                          }}
-                        ></div>
+                        <span>
+                          {report?.standard ||
+                            "Standard not selected"}
+                          {" · "}
+                          {formatTime(
+                            report?.timestamp
+                          )}
+                        </span>
                       </div>
 
-                      <span>
-                        {progress}%
-                      </span>
-                    </div>
+                      <div className="report-progress">
+                        <div className="report-progress-track">
+                          <div
+                            style={{
+                              width: `${progress}%`,
+                            }}
+                          />
+                        </div>
 
-                    <div className="report-actions">
-                      <Link
-                        to="/compliance"
-                        className="secondary-btn"
-                      >
-                        Open
-                      </Link>
+                        <span>
+                          {progress}%
+                        </span>
+                      </div>
 
-                      <button
-                        type="button"
-                        className="secondary-btn"
-                        onClick={() =>
-                          window.print()
-                        }
-                      >
-                        🖨
-                      </button>
+                      <div className="report-actions">
+                        <Link
+                          to="/compliance"
+                          className="secondary-btn"
+                        >
+                          Open
+                        </Link>
+
+                        <button
+                          type="button"
+                          className="secondary-btn"
+                          onClick={() =>
+                            window.print()
+                          }
+                          aria-label="Print report"
+                        >
+                          🖨
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })
+                  );
+                }
+              )
             )}
           </div>
         </section>
 
-        {/* Quick Actions */}
+        {/* =====================================================
+            QUICK ACTIONS
+        ====================================================== */}
+
         <section className="dashboard-quick">
-          <div>
+          <div className="dashboard-quick-heading">
             <p className="eyebrow">
               QUICK ACTIONS
             </p>
@@ -607,75 +793,516 @@ function Dashboard() {
             <Link to="/copilot">
               <span>✦</span>
 
-              <strong>Ask BIS AI</strong>
+              <strong>
+                Ask BIS AI
+              </strong>
 
               <p>
-                Ask questions about Indian Standards.
+                Ask questions about Indian
+                Standards.
               </p>
             </Link>
 
             <Link to="/standards">
               <span>⌕</span>
 
-              <strong>Search Standards</strong>
+              <strong>
+                Search Standards
+              </strong>
 
               <p>
-                Find standards by product or IS number.
+                Find standards by product or
+                IS number.
               </p>
             </Link>
 
             <Link to="/certification">
               <span>🏷</span>
 
-              <strong>Certification Advisor</strong>
+              <strong>
+                Certification Advisor
+              </strong>
 
               <p>
-                Explore a potential BIS certification
-                pathway.
+                Explore a potential BIS
+                certification pathway.
               </p>
             </Link>
 
             <Link to="/product-analyzer">
               <span>📷</span>
 
-              <strong>Analyze Product</strong>
+              <strong>
+                Analyze Product
+              </strong>
 
               <p>
-                Upload a product image for AI assistance.
+                Upload a product image for
+                AI assistance.
               </p>
             </Link>
 
             <Link to="/laboratories">
               <span>⌁</span>
 
-              <strong>Find Laboratory</strong>
+              <strong>
+                Find Laboratory
+              </strong>
 
               <p>
-                Search BIS-recognized laboratories.
+                Search BIS-recognized
+                laboratories.
               </p>
             </Link>
 
             <Link to="/profile">
               <span>◉</span>
 
-              <strong>Edit Profile</strong>
+              <strong>
+                Edit Profile
+              </strong>
 
               <p>
-                Update your BISense profile information.
+                Update your BISense profile
+                information.
               </p>
             </Link>
           </div>
 
           <button
             type="button"
-            className="secondary-btn"
+            className="secondary-btn dashboard-clear-btn"
             onClick={clearActivity}
-            style={{ marginTop: "18px" }}
           >
             Clear Activity
           </button>
         </section>
       </main>
+
+      <style>{`
+        .dashboard-page {
+          min-height: 100vh;
+          width: 100%;
+          overflow-x: hidden;
+          color: #111827;
+        }
+
+        .dashboard-container {
+          width: 100%;
+          box-sizing: border-box;
+        }
+
+        .dashboard-page h1,
+        .dashboard-page h2,
+        .dashboard-page h3,
+        .dashboard-page p,
+        .dashboard-page span,
+        .dashboard-page strong,
+        .dashboard-page time {
+          overflow-wrap: anywhere;
+        }
+
+        .dashboard-welcome-content,
+        .dashboard-mode-text,
+        .dashboard-card,
+        .dashboard-quick {
+          min-width: 0;
+        }
+
+        .dashboard-welcome h1,
+        .dashboard-welcome p,
+        .dashboard-mode h2,
+        .dashboard-mode p,
+        .dashboard-card h2,
+        .dashboard-card p,
+        .dashboard-card strong,
+        .dashboard-quick h2,
+        .dashboard-user-email {
+          color: #111827 !important;
+        }
+
+        .dashboard-user-email {
+          display: inline-block;
+          margin-top: 8px;
+          color: #6b7280 !important;
+          font-size: 13px;
+          overflow-wrap: anywhere;
+        }
+
+        .dashboard-profile-btn {
+          text-decoration: none;
+          flex-shrink: 0;
+        }
+
+        .mode-switch button {
+          color: #374151;
+          background: #fff;
+          border-color: #d9dee8;
+        }
+
+        .mode-switch button.mode-active {
+          color: #fff !important;
+          background: #18233c;
+          border-color: #18233c;
+        }
+
+        .mode-switch button:disabled {
+          cursor: wait;
+          opacity: 0.7;
+        }
+
+        .dashboard-stats > div {
+          min-width: 0;
+        }
+
+        .dashboard-stats span,
+        .dashboard-stats p {
+          color: #6b7280 !important;
+        }
+
+        .dashboard-stats strong {
+          color: #111827 !important;
+        }
+
+        .card-heading {
+          min-width: 0;
+        }
+
+        .card-heading > div {
+          min-width: 0;
+        }
+
+        .card-heading a {
+          flex-shrink: 0;
+          color: #4f5fda;
+          text-decoration: none;
+          white-space: nowrap;
+        }
+
+        .dashboard-empty {
+          min-width: 0;
+        }
+
+        .dashboard-empty strong {
+          color: #1f2937 !important;
+        }
+
+        .dashboard-empty p {
+          color: #6b7280 !important;
+        }
+
+        .saved-standard-item,
+        .dashboard-list-item,
+        .conversation-card,
+        .dashboard-report {
+          min-width: 0;
+        }
+
+        .saved-standard-content {
+          min-width: 0;
+          flex: 1;
+        }
+
+        .saved-standard-content > strong,
+        .saved-standard-content > p {
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+
+        .saved-standard-actions {
+          flex-shrink: 0;
+        }
+
+        .saved-standard-actions a {
+          text-decoration: none;
+        }
+
+        .saved-standard-actions button {
+          cursor: pointer;
+        }
+
+        .dashboard-link-item {
+          text-decoration: none;
+        }
+
+        .dashboard-list-item strong,
+        .dashboard-list-item span,
+        .dashboard-list-item time {
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+
+        .conversation-card {
+          text-decoration: none;
+        }
+
+        .conversation-card strong,
+        .conversation-card p {
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+
+        .report-info {
+          min-width: 0;
+          flex: 1;
+        }
+
+        .report-info strong,
+        .report-info span {
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+
+        .report-progress {
+          min-width: 130px;
+        }
+
+        .report-progress-track {
+          overflow: hidden;
+        }
+
+        .report-actions {
+          flex-shrink: 0;
+        }
+
+        .report-actions a {
+          text-decoration: none;
+        }
+
+        .report-actions button {
+          cursor: pointer;
+        }
+
+        .quick-action-grid a {
+          min-width: 0;
+          text-decoration: none;
+        }
+
+        .quick-action-grid strong,
+        .quick-action-grid p {
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+
+        .dashboard-clear-btn {
+          margin-top: 18px;
+        }
+
+        @media (max-width: 900px) {
+          .dashboard-welcome {
+            align-items: flex-start !important;
+            gap: 20px;
+          }
+
+          .dashboard-grid {
+            grid-template-columns: 1fr !important;
+          }
+
+          .dashboard-stats {
+            grid-template-columns: repeat(
+              2,
+              minmax(0, 1fr)
+            ) !important;
+          }
+
+          .quick-action-grid {
+            grid-template-columns: repeat(
+              2,
+              minmax(0, 1fr)
+            ) !important;
+          }
+
+          .dashboard-report {
+            grid-template-columns: 1fr !important;
+          }
+
+          .report-progress {
+            width: 100%;
+          }
+
+          .report-actions {
+            justify-content: flex-start;
+          }
+        }
+
+        @media (max-width: 650px) {
+          .dashboard-welcome {
+            flex-direction: column !important;
+          }
+
+          .dashboard-profile-btn {
+            width: 100%;
+            justify-content: center;
+          }
+
+          .dashboard-mode {
+            flex-direction: column !important;
+            align-items: stretch !important;
+            gap: 18px;
+          }
+
+          .mode-switch {
+            width: 100%;
+          }
+
+          .mode-switch button {
+            flex: 1;
+            min-width: 0;
+          }
+
+          .dashboard-stats {
+            grid-template-columns: 1fr 1fr !important;
+            gap: 10px !important;
+          }
+
+          .dashboard-stats > div {
+            min-height: 120px;
+          }
+
+          .card-heading {
+            align-items: flex-start !important;
+            flex-direction: column !important;
+            gap: 10px;
+          }
+
+          .card-heading a {
+            white-space: normal;
+          }
+
+          .saved-standard-item {
+            align-items: flex-start !important;
+            gap: 12px;
+          }
+
+          .saved-standard-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 7px;
+          }
+
+          .quick-action-grid {
+            grid-template-columns: 1fr !important;
+          }
+
+          .conversation-grid {
+            grid-template-columns: 1fr !important;
+          }
+
+          .report-actions {
+            width: 100%;
+            display: flex;
+            gap: 10px;
+          }
+
+          .report-actions > * {
+            flex: 1;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .dashboard-container {
+            padding-left: 14px !important;
+            padding-right: 14px !important;
+          }
+
+          .dashboard-welcome h1 {
+            font-size: clamp(
+              28px,
+              8vw,
+              38px
+            ) !important;
+            line-height: 1.12 !important;
+          }
+
+          .dashboard-welcome > p,
+          .dashboard-welcome-content > p {
+            font-size: 14px !important;
+            line-height: 1.6 !important;
+          }
+
+          .dashboard-mode h2 {
+            font-size: 22px !important;
+          }
+
+          .mode-switch {
+            display: grid !important;
+            grid-template-columns: 1fr !important;
+            gap: 8px;
+          }
+
+          .mode-switch button {
+            width: 100%;
+            min-height: 45px;
+          }
+
+          .dashboard-stats {
+            grid-template-columns: 1fr !important;
+          }
+
+          .dashboard-stats > div {
+            min-height: auto;
+          }
+
+          .saved-standard-item {
+            flex-direction: column !important;
+          }
+
+          .saved-standard-actions {
+            width: 100%;
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+          }
+
+          .dashboard-list-item {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 5px;
+          }
+
+          .conversation-card {
+            padding: 17px !important;
+          }
+
+          .report-actions {
+            flex-direction: column;
+          }
+
+          .report-actions > * {
+            width: 100%;
+          }
+
+          .dashboard-clear-btn {
+            width: 100%;
+          }
+        }
+
+        @media print {
+          .dashboard-page nav,
+          .dashboard-page footer,
+          .dashboard-profile-btn,
+          .dashboard-clear-btn,
+          .quick-action-grid,
+          .mode-switch {
+            display: none !important;
+          }
+
+          .dashboard-page {
+            background: #fff !important;
+          }
+
+          .dashboard-container {
+            max-width: 100% !important;
+            padding: 0 !important;
+          }
+
+          .dashboard-card,
+          .dashboard-report {
+            box-shadow: none !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

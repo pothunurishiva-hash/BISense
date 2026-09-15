@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import Navbar from "../components/Navbar";
 
-const API_URL = "";
+const API_BASE = "";
 
 function StandardDetails() {
   const { standardNumber } = useParams();
@@ -11,292 +12,467 @@ function StandardDetails() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const fetchStandard = async () => {
-      try {
-        setLoading(true);
-        setError("");
+    let mounted = true;
 
-        const decodedNumber = decodeURIComponent(standardNumber);
+    const fetchStandard = async () => {
+      setLoading(true);
+      setError("");
+      setStandard(null);
+
+      try {
+        const decodedNumber = decodeURIComponent(
+          standardNumber || ""
+        ).trim();
+
+        if (!decodedNumber) {
+          throw new Error("No standard number was provided.");
+        }
 
         const response = await fetch(
-          `${API_URL}/api/standards/${encodeURIComponent(
+          `${API_BASE}/api/standards/${encodeURIComponent(
             decodedNumber
-          )}`
+          )}`,
+          {
+            method: "GET",
+            headers: {
+              Accept: "application/json",
+            },
+            cache: "no-store",
+          }
         );
 
         if (!response.ok) {
-          throw new Error("Standard not found.");
+          if (response.status === 404) {
+            throw new Error(
+              "The requested BIS standard could not be found."
+            );
+          }
+
+          throw new Error(
+            `Unable to load this standard (HTTP ${response.status}).`
+          );
         }
 
         const data = await response.json();
+
+        if (!mounted) {
+          return;
+        }
+
         setStandard(data);
       } catch (err) {
-        setError(err.message || "Failed to load standard details.");
+        console.error(
+          "Standard details request failed:",
+          err
+        );
+
+        if (!mounted) {
+          return;
+        }
+
+        setError(
+          err?.message ||
+            "Failed to load standard details."
+        );
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchStandard();
+
+    return () => {
+      mounted = false;
+    };
   }, [standardNumber]);
+
+  /* =========================================================
+     LOADING
+     ========================================================= */
 
   if (loading) {
     return (
-      <div style={styles.page}>
-        <div style={styles.container}>
-          <p>Loading BIS standard details...</p>
-        </div>
-      </div>
+      <>
+        <Navbar />
+
+        <main className="standard-details-page">
+          <div className="standard-details-container">
+            <div className="standard-details-loading">
+              <div className="standard-loading-spinner"></div>
+
+              <h2>Loading BIS standard details...</h2>
+
+              <p>
+                Please wait while BISense retrieves the
+                standard information.
+              </p>
+            </div>
+          </div>
+        </main>
+      </>
     );
   }
 
-  if (error) {
-    return (
-      <div style={styles.page}>
-        <div style={styles.container}>
-          <h2>Standard Not Found</h2>
-          <p>{error}</p>
+  /* =========================================================
+     ERROR
+     ========================================================= */
 
-          <Link to="/search" style={styles.backButton}>
-            ← Back to Search
-          </Link>
-        </div>
-      </div>
+  if (error || !standard) {
+    return (
+      <>
+        <Navbar />
+
+        <main className="standard-details-page">
+          <div className="standard-details-container">
+            <div className="standard-details-error">
+              <span className="standard-error-badge">
+                BIS STANDARD
+              </span>
+
+              <h1>Standard Not Found</h1>
+
+              <p>
+                {error ||
+                  "The requested standard could not be loaded."}
+              </p>
+
+              <Link
+                to="/standards"
+                className="standard-back-button"
+              >
+                ← Back to Standards
+              </Link>
+            </div>
+          </div>
+        </main>
+      </>
     );
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.container}>
-        <Link to="/search" style={styles.backLink}>
-          ← Back to Standards Search
-        </Link>
+    <>
+      <Navbar />
 
-        <div style={styles.headerCard}>
-          <div style={styles.badge}>BIS STANDARD</div>
+      <main className="standard-details-page">
+        {/* ===================================================
+            MOBILE / CROSS-BROWSER STYLE PROTECTION
+            =================================================== */}
 
-          <h1>{standard.number}</h1>
+        <style>
+          {`
+            .standard-details-page,
+            .standard-details-page * {
+              color-scheme: light;
+            }
 
-          <h2>{standard.title}</h2>
+            .standard-details-page {
+              color: #111827;
+            }
 
-          <span style={styles.status}>{standard.status}</span>
-        </div>
+            .standard-details-page h1,
+            .standard-details-page h2,
+            .standard-details-page h3,
+            .standard-details-page p,
+            .standard-details-page span,
+            .standard-details-page strong,
+            .standard-details-page div {
+              -webkit-text-fill-color: initial;
+            }
 
-        <div style={styles.section}>
-          <h3>Standard Information</h3>
+            .standard-details-page
+              .standard-main-title {
+              color: #111827 !important;
+              -webkit-text-fill-color: #111827 !important;
+            }
 
-          <div style={styles.grid}>
-            <InfoCard
-              label="Standard Number"
-              value={standard.number}
-            />
+            .standard-details-page
+              .standard-main-description {
+              color: #4F607A !important;
+              -webkit-text-fill-color: #4F607A !important;
+            }
 
-            <InfoCard
-              label="Category"
-              value={standard.category || "Not available"}
-            />
+            .standard-details-page
+              .standard-section-title {
+              color: #111827 !important;
+              -webkit-text-fill-color: #111827 !important;
+            }
 
-            <InfoCard
-              label="Edition Year"
-              value={standard.edition_year || "Not available"}
-            />
+            .standard-details-page
+              .standard-body-text {
+              color: #374151 !important;
+              -webkit-text-fill-color: #374151 !important;
+            }
 
-            <InfoCard
-              label="Status"
-              value={standard.status || "Not available"}
-            />
-          </div>
-        </div>
+            .standard-details-page
+              .standard-info-label {
+              color: #6B7280 !important;
+              -webkit-text-fill-color: #6B7280 !important;
+            }
 
-        <div style={styles.section}>
-          <h3>Scope</h3>
+            .standard-details-page
+              .standard-info-value {
+              color: #111827 !important;
+              -webkit-text-fill-color: #111827 !important;
+            }
 
-          <p style={styles.text}>
-            {standard.scope || "Scope information is not available."}
-          </p>
-        </div>
+            .standard-details-page
+              .standard-source-title,
+            .standard-details-page
+              .standard-source-text {
+              color: #FFFFFF !important;
+              -webkit-text-fill-color: #FFFFFF !important;
+            }
 
-        <div style={styles.section}>
-          <h3>Certification Information</h3>
+            .standard-details-page
+              .standard-source-label {
+              color: #D7E1F0 !important;
+              -webkit-text-fill-color: #D7E1F0 !important;
+            }
 
-          <div style={styles.grid}>
-            <InfoCard
-              label="Certification Scheme"
-              value={
-                standard.certification_scheme || "Not specified"
+            @media (max-width: 650px) {
+              .standard-details-page {
+                width: 100%;
+                min-width: 0;
+                overflow-x: hidden;
               }
-            />
 
-            <InfoCard
-              label="Certification Status"
-              value={
-                standard.certification_status || "Not specified"
+              .standard-details-container {
+                width: 100%;
+                box-sizing: border-box;
+                padding: 18px 14px 40px;
               }
-            />
 
-            <InfoCard
-              label="QCO Information"
-              value={
-                standard.qco_information || "Not specified"
+              .standard-details-page
+                .standard-header-card {
+                padding: 22px 18px !important;
+                border-radius: 18px !important;
               }
-            />
-          </div>
+
+              .standard-details-page
+                .standard-main-title {
+                font-size: 34px !important;
+                line-height: 1.05 !important;
+                overflow-wrap: anywhere;
+              }
+
+              .standard-details-page
+                .standard-main-description {
+                font-size: 15px !important;
+                line-height: 1.5 !important;
+              }
+
+              .standard-details-page
+                .standard-section-card {
+                padding: 20px 16px !important;
+                border-radius: 18px !important;
+              }
+
+              .standard-details-page
+                .standard-info-grid {
+                grid-template-columns: 1fr !important;
+              }
+
+              .standard-details-page
+                .standard-source-card {
+                padding: 22px 18px !important;
+              }
+
+              .standard-details-page
+                .standard-source-button {
+                width: 100%;
+                box-sizing: border-box;
+                text-align: center;
+              }
+            }
+          `}
+        </style>
+
+        <div className="standard-details-container">
+          {/* =================================================
+              BACK LINK
+              ================================================= */}
+
+          <Link
+            to="/standards"
+            className="standard-details-back-link"
+          >
+            ← Back to Standards Search
+          </Link>
+
+          {/* =================================================
+              HEADER
+              ================================================= */}
+
+          <section className="standard-header-card">
+            <span className="standard-badge">
+              BIS STANDARD
+            </span>
+
+            <h1 className="standard-main-title">
+              {standard.number || "Unknown Standard"}
+            </h1>
+
+            <p className="standard-main-description">
+              {standard.title ||
+                "BIS standard information"}
+            </p>
+
+            <span className="standard-status-badge">
+              {standard.status || "Status unavailable"}
+            </span>
+          </section>
+
+          {/* =================================================
+              BASIC INFORMATION
+              ================================================= */}
+
+          <section className="standard-section-card">
+            <h2 className="standard-section-title">
+              Standard Information
+            </h2>
+
+            <div className="standard-info-grid">
+              <InfoCard
+                label="Standard Number"
+                value={
+                  standard.number ||
+                  "Not available"
+                }
+              />
+
+              <InfoCard
+                label="Category"
+                value={
+                  standard.category ||
+                  "Not available"
+                }
+              />
+
+              <InfoCard
+                label="Edition Year"
+                value={
+                  standard.edition_year ??
+                  "Not available"
+                }
+              />
+
+              <InfoCard
+                label="Status"
+                value={
+                  standard.status ||
+                  "Not available"
+                }
+              />
+            </div>
+          </section>
+
+          {/* =================================================
+              SCOPE
+              ================================================= */}
+
+          <section className="standard-section-card">
+            <h2 className="standard-section-title">
+              Scope
+            </h2>
+
+            <p className="standard-body-text">
+              {standard.scope ||
+                "Scope information is not available for this standard in the current BISense knowledge base."}
+            </p>
+          </section>
+
+          {/* =================================================
+              CERTIFICATION
+              ================================================= */}
+
+          <section className="standard-section-card">
+            <h2 className="standard-section-title">
+              Certification Information
+            </h2>
+
+            <div className="standard-info-grid">
+              <InfoCard
+                label="Certification Scheme"
+                value={
+                  standard.certification_scheme ||
+                  "Not specified"
+                }
+              />
+
+              <InfoCard
+                label="Certification Status"
+                value={
+                  standard.certification_status ||
+                  "Not specified"
+                }
+              />
+
+              <InfoCard
+                label="QCO Information"
+                value={
+                  standard.qco_information ||
+                  "Not specified"
+                }
+              />
+            </div>
+          </section>
+
+          {/* =================================================
+              OFFICIAL SOURCE
+              ================================================= */}
+
+          <section className="standard-source-card">
+            <span className="standard-source-label">
+              OFFICIAL SOURCE
+            </span>
+
+            <h2 className="standard-source-title">
+              Official BIS Information
+            </h2>
+
+            <p className="standard-source-text">
+              Source:{" "}
+              <strong>
+                {standard.source_name ||
+                  "BIS Standards Portal"}
+              </strong>
+            </p>
+
+            {standard.source_url && (
+              <a
+                href={standard.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="standard-source-button"
+              >
+                View Official BIS Source ↗
+              </a>
+            )}
+          </section>
         </div>
-
-        <div style={styles.sourceCard}>
-          <h3>Official BIS Source</h3>
-
-          <p>
-            Source:{" "}
-            <strong>
-              {standard.source_name || "BIS"}
-            </strong>
-          </p>
-
-          {standard.source_url && (
-            <a
-              href={standard.source_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={styles.sourceButton}
-            >
-              View Official BIS Source ↗
-            </a>
-          )}
-        </div>
-      </div>
-    </div>
+      </main>
+    </>
   );
 }
+
+/* =========================================================
+   REUSABLE INFORMATION CARD
+   ========================================================= */
 
 function InfoCard({ label, value }) {
   return (
-    <div style={styles.infoCard}>
-      <div style={styles.label}>{label}</div>
-      <div style={styles.value}>{value}</div>
+    <div className="standard-info-card">
+      <div className="standard-info-label">
+        {label}
+      </div>
+
+      <div className="standard-info-value">
+        {value}
+      </div>
     </div>
   );
 }
-
-const styles = {
-  page: {
-    minHeight: "100vh",
-    background: "#f5f7fb",
-    padding: "40px 20px",
-  },
-
-  container: {
-    maxWidth: "1000px",
-    margin: "0 auto",
-  },
-
-  backLink: {
-    display: "inline-block",
-    marginBottom: "25px",
-    textDecoration: "none",
-    color: "#2563eb",
-    fontWeight: "600",
-  },
-
-  backButton: {
-    display: "inline-block",
-    marginTop: "20px",
-    padding: "12px 20px",
-    background: "#2563eb",
-    color: "#fff",
-    borderRadius: "8px",
-    textDecoration: "none",
-  },
-
-  headerCard: {
-    background: "#fff",
-    padding: "35px",
-    borderRadius: "16px",
-    boxShadow: "0 5px 20px rgba(0,0,0,0.06)",
-    marginBottom: "25px",
-  },
-
-  badge: {
-    display: "inline-block",
-    padding: "6px 10px",
-    borderRadius: "6px",
-    background: "#e8f0ff",
-    color: "#2563eb",
-    fontSize: "12px",
-    fontWeight: "700",
-    marginBottom: "15px",
-  },
-
-  headerCardH1: {
-    margin: 0,
-  },
-
-  status: {
-    display: "inline-block",
-    marginTop: "15px",
-    padding: "7px 12px",
-    borderRadius: "20px",
-    background: "#e8f7ee",
-    color: "#16803c",
-    fontWeight: "600",
-    fontSize: "13px",
-  },
-
-  section: {
-    background: "#fff",
-    padding: "30px",
-    borderRadius: "16px",
-    boxShadow: "0 5px 20px rgba(0,0,0,0.05)",
-    marginBottom: "25px",
-  },
-
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: "15px",
-    marginTop: "20px",
-  },
-
-  infoCard: {
-    border: "1px solid #e5e7eb",
-    borderRadius: "10px",
-    padding: "18px",
-  },
-
-  label: {
-    fontSize: "13px",
-    color: "#6b7280",
-    marginBottom: "8px",
-  },
-
-  value: {
-    fontSize: "16px",
-    fontWeight: "600",
-    color: "#111827",
-  },
-
-  text: {
-    lineHeight: "1.7",
-    color: "#374151",
-  },
-
-  sourceCard: {
-    background: "#111827",
-    color: "#fff",
-    padding: "30px",
-    borderRadius: "16px",
-  },
-
-  sourceButton: {
-    display: "inline-block",
-    marginTop: "10px",
-    padding: "12px 18px",
-    background: "#fff",
-    color: "#111827",
-    borderRadius: "8px",
-    textDecoration: "none",
-    fontWeight: "600",
-  },
-};
 
 export default StandardDetails;
