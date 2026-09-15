@@ -5,17 +5,26 @@ import "../App.css";
 
 function Home() {
   const [user, setUser] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
 
     const loadUser = async () => {
-      const {
-        data: { user: currentUser },
-      } = await supabase.auth.getUser();
+      try {
+        const {
+          data: { user: currentUser },
+        } = await supabase.auth.getUser();
 
-      if (mounted) {
-        setUser(currentUser);
+        if (mounted) {
+          setUser(currentUser);
+        }
+      } catch (error) {
+        console.error("Failed to load user:", error);
+
+        if (mounted) {
+          setUser(null);
+        }
       }
     };
 
@@ -42,20 +51,60 @@ function Home() {
 
   const profileInitial = displayName.charAt(0).toUpperCase();
 
+  const closeMenu = () => {
+    setMenuOpen(false);
+  };
+
+  const handleMenuToggle = () => {
+    setMenuOpen((prev) => !prev);
+  };
+
+  useEffect(() => {
+    const handleEscape = (event) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, []);
+
   return (
     <div className="home-page">
-      {/* Navigation */}
-      <nav className="navbar">
-        <Link to="/" className="logo" aria-label="BISense Home">
+      {/* =========================================================
+          NAVIGATION
+          ========================================================= */}
+
+      <nav className={`navbar ${menuOpen ? "mobile-menu-open" : ""}`}>
+        <Link
+          to="/"
+          className="logo"
+          aria-label="BISense Home"
+          onClick={closeMenu}
+        >
           BIS<span>ense</span>
         </Link>
 
+        {/* Desktop navigation */}
         <div className="nav-links">
-          <a href="#features">Features</a>
-          <a href="#modes">Modes</a>
-          <a href="#about">About</a>
+          <a href="#features" onClick={closeMenu}>
+            Features
+          </a>
+
+          <a href="#modes" onClick={closeMenu}>
+            Modes
+          </a>
+
+          <a href="#about" onClick={closeMenu}>
+            About
+          </a>
         </div>
 
+        {/* Desktop / default actions */}
         <div className="nav-actions">
           {user ? (
             <Link
@@ -63,22 +112,210 @@ function Home() {
               className="home-profile-button"
               title={`Open ${displayName}'s profile`}
               aria-label={`Open ${displayName}'s profile`}
+              onClick={closeMenu}
             >
               {profileInitial}
             </Link>
           ) : (
-            <Link to="/login" className="login-btn">
+            <Link
+              to="/login"
+              className="login-btn"
+              onClick={closeMenu}
+            >
               Login
             </Link>
           )}
 
-          <Link to="/copilot" className="primary-btn">
+          <Link
+            to="/copilot"
+            className="primary-btn navbar-get-started"
+            onClick={closeMenu}
+          >
             Get Started
           </Link>
+
+          {/* Mobile menu button */}
+          <button
+            type="button"
+            className="mobile-menu-button"
+            onClick={handleMenuToggle}
+            aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
+            aria-expanded={menuOpen}
+            aria-controls="mobile-navigation-menu"
+          >
+            {menuOpen ? "×" : "☰"}
+          </button>
         </div>
       </nav>
 
-      {/* Hero */}
+      {/* =========================================================
+          MOBILE NAVIGATION DRAWER
+          ========================================================= */}
+
+      {menuOpen && (
+        <>
+          <button
+            type="button"
+            className="mobile-menu-backdrop"
+            aria-label="Close navigation menu"
+            onClick={closeMenu}
+          />
+
+          <div
+            id="mobile-navigation-menu"
+            className="mobile-navigation-menu"
+          >
+            <div className="mobile-navigation-header">
+              <div>
+                <p className="mobile-menu-eyebrow">BISENSE</p>
+                <h2>Explore the platform</h2>
+              </div>
+
+              <button
+                type="button"
+                className="mobile-menu-close"
+                onClick={closeMenu}
+                aria-label="Close navigation menu"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="mobile-navigation-list">
+              <a href="#features" onClick={closeMenu}>
+                <span className="mobile-nav-icon">✦</span>
+                <span>
+                  <strong>Features</strong>
+                  <small>Explore BISense capabilities</small>
+                </span>
+              </a>
+
+              <a href="#modes" onClick={closeMenu}>
+                <span className="mobile-nav-icon">◎</span>
+                <span>
+                  <strong>Modes</strong>
+                  <small>Consumer and manufacturer experiences</small>
+                </span>
+              </a>
+
+              <a href="#about" onClick={closeMenu}>
+                <span className="mobile-nav-icon">◈</span>
+                <span>
+                  <strong>About</strong>
+                  <small>Learn how BISense connects BIS information</small>
+                </span>
+              </a>
+
+              <Link to="/copilot" onClick={closeMenu}>
+                <span className="mobile-nav-icon">✦</span>
+                <span>
+                  <strong>BIS AI Assistant</strong>
+                  <small>Ask questions about BIS and Indian Standards</small>
+                </span>
+              </Link>
+
+              <Link to="/standards" onClick={closeMenu}>
+                <span className="mobile-nav-icon">⌕</span>
+                <span>
+                  <strong>Standards</strong>
+                  <small>Search Indian Standards</small>
+                </span>
+              </Link>
+
+              <Link to="/compare" onClick={closeMenu}>
+                <span className="mobile-nav-icon">⇄</span>
+                <span>
+                  <strong>Compare Standards</strong>
+                  <small>Compare standards side by side</small>
+                </span>
+              </Link>
+
+              <Link to="/certification" onClick={closeMenu}>
+                <span className="mobile-nav-icon">✓</span>
+                <span>
+                  <strong>Certification</strong>
+                  <small>Explore certification guidance</small>
+                </span>
+              </Link>
+
+              <Link to="/product-analyzer" onClick={closeMenu}>
+                <span className="mobile-nav-icon">◈</span>
+                <span>
+                  <strong>Product Analyzer</strong>
+                  <small>Analyze a product</small>
+                </span>
+              </Link>
+
+              <Link to="/compliance" onClick={closeMenu}>
+                <span className="mobile-nav-icon">☑</span>
+                <span>
+                  <strong>Compliance</strong>
+                  <small>Build a practical compliance checklist</small>
+                </span>
+              </Link>
+
+              <Link to="/laboratories" onClick={closeMenu}>
+                <span className="mobile-nav-icon">⌁</span>
+                <span>
+                  <strong>Laboratories</strong>
+                  <small>Find BIS-recognized laboratories</small>
+                </span>
+              </Link>
+
+              <Link to="/awareness" onClick={closeMenu}>
+                <span className="mobile-nav-icon">◎</span>
+                <span>
+                  <strong>Knowledge Hub</strong>
+                  <small>Learn about BIS and consumer awareness</small>
+                </span>
+              </Link>
+
+              {user ? (
+                <>
+                  <Link to="/dashboard" onClick={closeMenu}>
+                    <span className="mobile-nav-icon">▦</span>
+                    <span>
+                      <strong>Dashboard</strong>
+                      <small>Track your BIS work</small>
+                    </span>
+                  </Link>
+
+                  <Link to="/profile" onClick={closeMenu}>
+                    <span className="mobile-nav-icon">◉</span>
+                    <span>
+                      <strong>Profile</strong>
+                      <small>Manage your BISense account</small>
+                    </span>
+                  </Link>
+                </>
+              ) : (
+                <Link to="/login" onClick={closeMenu}>
+                  <span className="mobile-nav-icon">→</span>
+                  <span>
+                    <strong>Login</strong>
+                    <small>Access your BISense account</small>
+                  </span>
+                </Link>
+              )}
+            </div>
+
+            <div className="mobile-navigation-footer">
+              <Link
+                to="/copilot"
+                className="primary-btn large"
+                onClick={closeMenu}
+              >
+                Ask BIS AI →
+              </Link>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* =========================================================
+          HERO
+          ========================================================= */}
+
       <section className="hero">
         <div className="hero-content">
           <p className="eyebrow">
@@ -156,7 +393,10 @@ function Home() {
         </div>
       </section>
 
-      {/* BISense Tools */}
+      {/* =========================================================
+          BISENSE TOOLS
+          ========================================================= */}
+
       <section className="section home-tools-section">
         <div className="section-heading">
           <p className="eyebrow">BISENSE TOOLS</p>
@@ -172,88 +412,109 @@ function Home() {
         <div className="home-tools-grid">
           <Link to="/standards" className="home-tool-button">
             <span className="home-tool-icon">⌕</span>
+
             <span>
               <strong>Standards</strong>
               <small>Search Indian Standards</small>
             </span>
+
             <span className="home-tool-arrow">→</span>
           </Link>
 
           <Link to="/copilot" className="home-tool-button featured">
             <span className="home-tool-icon">✦</span>
+
             <span>
               <strong>BIS Copilot</strong>
               <small>Ask BIS AI</small>
             </span>
+
             <span className="home-tool-arrow">→</span>
           </Link>
 
           <Link to="/compare" className="home-tool-button">
             <span className="home-tool-icon">⇄</span>
+
             <span>
               <strong>Compare</strong>
               <small>Compare standards</small>
             </span>
+
             <span className="home-tool-arrow">→</span>
           </Link>
 
           <Link to="/certification" className="home-tool-button">
             <span className="home-tool-icon">✓</span>
+
             <span>
               <strong>Certification</strong>
               <small>Find certification guidance</small>
             </span>
+
             <span className="home-tool-arrow">→</span>
           </Link>
 
           <Link to="/product-analyzer" className="home-tool-button">
             <span className="home-tool-icon">◈</span>
+
             <span>
               <strong>Product Analyzer</strong>
               <small>Analyze a product</small>
             </span>
+
             <span className="home-tool-arrow">→</span>
           </Link>
 
           <Link to="/compliance" className="home-tool-button">
             <span className="home-tool-icon">☑</span>
+
             <span>
               <strong>Compliance</strong>
               <small>Build a compliance checklist</small>
             </span>
+
             <span className="home-tool-arrow">→</span>
           </Link>
 
           <Link to="/laboratories" className="home-tool-button">
             <span className="home-tool-icon">⌁</span>
+
             <span>
               <strong>Laboratories</strong>
               <small>Find BIS-recognized labs</small>
             </span>
+
             <span className="home-tool-arrow">→</span>
           </Link>
 
           <Link to="/dashboard" className="home-tool-button">
             <span className="home-tool-icon">▦</span>
+
             <span>
               <strong>Dashboard</strong>
               <small>Track your BIS work</small>
             </span>
+
             <span className="home-tool-arrow">→</span>
           </Link>
 
           <Link to="/awareness" className="home-tool-button">
             <span className="home-tool-icon">◎</span>
+
             <span>
               <strong>Knowledge Hub</strong>
               <small>Learn about BIS</small>
             </span>
+
             <span className="home-tool-arrow">→</span>
           </Link>
         </div>
       </section>
 
-      {/* Modes */}
+      {/* =========================================================
+          MODES
+          ========================================================= */}
+
       <section className="section" id="modes">
         <div className="section-heading">
           <p className="eyebrow">CHOOSE YOUR EXPERIENCE</p>
@@ -302,7 +563,10 @@ function Home() {
         </div>
       </section>
 
-      {/* Features */}
+      {/* =========================================================
+          FEATURES
+          ========================================================= */}
+
       <section className="section" id="features">
         <div className="section-heading">
           <p className="eyebrow">POWERFUL TOOLS</p>
@@ -313,7 +577,9 @@ function Home() {
         <div className="feature-grid">
           <Link to="/standards" className="feature-card">
             <span className="feature-number">01</span>
+
             <h3>Search Standards</h3>
+
             <p>
               Find standards using product names, keywords or IS numbers.
             </p>
@@ -321,7 +587,9 @@ function Home() {
 
           <Link to="/copilot" className="feature-card highlighted">
             <span className="feature-number">02</span>
+
             <h3>Ask BIS AI</h3>
+
             <p>
               Ask questions and get easy-to-understand answers with
               supporting sources.
@@ -330,7 +598,9 @@ function Home() {
 
           <Link to="/compare" className="feature-card">
             <span className="feature-number">03</span>
+
             <h3>Compare Standards</h3>
+
             <p>
               Compare the scope, requirements, testing and important
               differences between standards.
@@ -339,7 +609,9 @@ function Home() {
 
           <Link to="/certification" className="feature-card">
             <span className="feature-number">04</span>
+
             <h3>Certification Advisor</h3>
+
             <p>
               Get guided assistance to identify relevant certification
               requirements.
@@ -348,7 +620,9 @@ function Home() {
 
           <Link to="/product-analyzer" className="feature-card">
             <span className="feature-number">05</span>
+
             <h3>Product Image Analysis</h3>
+
             <p>
               Upload a product image for AI-assisted identification and
               BIS-related information.
@@ -357,7 +631,9 @@ function Home() {
 
           <Link to="/compliance" className="feature-card">
             <span className="feature-number">06</span>
+
             <h3>Compliance Checklist</h3>
+
             <p>
               Turn applicable requirements into a clear, trackable checklist.
             </p>
@@ -365,7 +641,10 @@ function Home() {
         </div>
       </section>
 
-      {/* AI Section */}
+      {/* =========================================================
+          AI SECTION
+          ========================================================= */}
+
       <section className="ai-section" id="about">
         <div>
           <p className="eyebrow">THE BIS KNOWLEDGE LAYER</p>
@@ -410,7 +689,10 @@ function Home() {
         </div>
       </section>
 
-      {/* Awareness CTA */}
+      {/* =========================================================
+          AWARENESS CTA
+          ========================================================= */}
+
       <section className="section awareness-cta">
         <div className="awareness-box">
           <div>
@@ -432,7 +714,10 @@ function Home() {
         </div>
       </section>
 
-      {/* Footer */}
+      {/* =========================================================
+          FOOTER
+          ========================================================= */}
+
       <footer className="footer">
         <div>
           <Link to="/" className="logo" aria-label="BISense Home">

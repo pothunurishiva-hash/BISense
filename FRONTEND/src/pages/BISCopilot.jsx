@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
@@ -8,6 +8,8 @@ export default function BISCopilot() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const conversationRef = useRef(null);
 
   const suggestions = [
     "What is IS 456?",
@@ -80,24 +82,31 @@ export default function BISCopilot() {
     setMessage("");
 
     try {
-      const response = await fetch(
-        "/api/chat",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            message: cleanMessage,
-          }),
-        }
-      );
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: cleanMessage,
+        }),
+      });
 
-      if (!response.ok) {
-        throw new Error("Unable to get a response from BIS AI.");
+      let data = {};
+
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          data.detail ||
+            data.message ||
+            "Unable to get a response from BIS AI."
+        );
+      }
 
       const assistantMessage = {
         role: "assistant",
@@ -111,10 +120,9 @@ export default function BISCopilot() {
       setMessages((prev) => [...prev, assistantMessage]);
 
       try {
-        const existing =
-          JSON.parse(
-            localStorage.getItem("bisense_recent_chats") || "[]"
-          );
+        const existing = JSON.parse(
+          localStorage.getItem("bisense_recent_chats") || "[]"
+        );
 
         const updated = [
           {
@@ -135,19 +143,48 @@ export default function BISCopilot() {
         // Ignore localStorage errors.
       }
     } catch (err) {
+      console.error("BIS AI request failed:", err);
+
       setError(
-        err.message || "Something went wrong while contacting BIS AI."
+        err.message ||
+          "Something went wrong while contacting BIS AI."
       );
     } finally {
       setLoading(false);
     }
   };
 
+  const clearConversation = () => {
+    if (loading) {
+      return;
+    }
+
+    setMessages([]);
+    setError("");
+  };
+
+  useEffect(() => {
+    if (messages.length === 0) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      conversationRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }, [messages]);
+
   return (
     <div className="copilot-page">
       <Navbar />
 
       <main className="copilot-main">
+        {/* =====================================================
+            HERO
+            ===================================================== */}
+
         <section className="copilot-hero">
           <span className="copilot-kicker">
             BIS INTELLIGENCE COPILOT
@@ -156,7 +193,7 @@ export default function BISCopilot() {
           <h1 className="copilot-title">
             Understand Indian Standards.
             <br />
-            Act with confidence.
+            <span>Act with confidence.</span>
           </h1>
 
           <p className="copilot-subtitle">
@@ -164,6 +201,10 @@ export default function BISCopilot() {
             analyze products, find recognized laboratories and build
             practical compliance workflows with BISense.
           </p>
+
+          {/* =================================================
+              AI INPUT
+              ================================================= */}
 
           <div className="copilot-input-card">
             <div className="copilot-input-shell">
@@ -173,20 +214,23 @@ export default function BISCopilot() {
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
                     sendMessage();
                   }
                 }}
                 placeholder="Ask anything about BIS or Indian Standards..."
+                aria-label="Ask BIS AI"
+                disabled={loading}
               />
 
               <button
                 className="copilot-send"
                 type="button"
                 onClick={() => sendMessage()}
-                disabled={loading}
+                disabled={loading || !message.trim()}
               >
-                {loading ? "..." : "Ask AI"}
+                {loading ? "Thinking..." : "Ask AI"}
               </button>
             </div>
 
@@ -197,6 +241,7 @@ export default function BISCopilot() {
                   type="button"
                   className="copilot-suggestion"
                   onClick={() => sendMessage(suggestion)}
+                  disabled={loading}
                 >
                   {suggestion}
                 </button>
@@ -205,50 +250,30 @@ export default function BISCopilot() {
           </div>
 
           {error && (
-            <div className="copilot-error">
-              {error}
+            <div className="copilot-error" role="alert">
+              <span>{error}</span>
+
+              <button
+                type="button"
+                onClick={() => setError("")}
+              >
+                Dismiss
+              </button>
             </div>
           )}
         </section>
 
-        <section className="copilot-section">
-          <div className="copilot-section-heading">
-            <span className="copilot-kicker">
-              BIS WORKFLOWS
-            </span>
-
-            <h2>Do more than ask questions.</h2>
-
-            <p>
-              Move from information to an actual BIS workflow.
-            </p>
-          </div>
-
-          <div className="copilot-workflow-grid">
-            {workflows.map((workflow) => (
-              <Link
-                key={workflow.title}
-                to={workflow.to}
-                className="copilot-workflow-card"
-              >
-                <div className="copilot-workflow-icon">
-                  {workflow.icon}
-                </div>
-
-                <h3>{workflow.title}</h3>
-
-                <p>{workflow.description}</p>
-
-                <span className="text-link">
-                  Open workflow →
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
+        {/* =====================================================
+            AI CONVERSATION
+            IMPORTANT:
+            This is intentionally BEFORE BIS WORKFLOWS.
+            ===================================================== */}
 
         {messages.length > 0 && (
-          <section className="copilot-conversation">
+          <section
+            className="copilot-conversation"
+            ref={conversationRef}
+          >
             <div className="copilot-conversation-header">
               <div>
                 <span className="copilot-kicker">
@@ -258,9 +283,21 @@ export default function BISCopilot() {
                 <h2>BIS AI Response</h2>
               </div>
 
-              <span className="copilot-status">
-                {loading ? "Thinking..." : "Ready"}
-              </span>
+              <div className="copilot-conversation-actions">
+                <span className="copilot-status">
+                  {loading ? "Thinking..." : "Ready"}
+                </span>
+
+                {!loading && (
+                  <button
+                    type="button"
+                    className="copilot-clear-button"
+                    onClick={clearConversation}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="copilot-message-list">
@@ -308,28 +345,85 @@ export default function BISCopilot() {
 
                     {item.agent && (
                       <div className="copilot-agent-panel">
-                        <strong>Workflow</strong>
+                        <h4>Workflow</h4>
 
-                        <div className="copilot-agent-plan">
-                          {item.agent.steps?.map(
-                            (step, stepIndex) => (
-                              <div
-                                className="copilot-agent-step"
-                                key={stepIndex}
-                              >
-                                {step}
-                              </div>
-                            )
+                        {Array.isArray(item.agent.steps) &&
+                          item.agent.steps.length > 0 && (
+                            <div className="copilot-agent-plan">
+                              {item.agent.steps.map(
+                                (step, stepIndex) => (
+                                  <div
+                                    className="copilot-agent-step"
+                                    key={`${step}-${stepIndex}`}
+                                  >
+                                    {step}
+                                  </div>
+                                )
+                              )}
+                            </div>
                           )}
-                        </div>
                       </div>
                     )}
                   </div>
                 </div>
               ))}
+
+              {loading && (
+                <div className="copilot-message assistant">
+                  <div className="copilot-avatar">AI</div>
+
+                  <div className="copilot-bubble">
+                    <p>Analyzing your BIS question...</p>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
         )}
+
+        {/* =====================================================
+            BIS WORKFLOWS
+            ===================================================== */}
+
+        <section className="copilot-section">
+          <div className="copilot-section-heading">
+            <span className="copilot-kicker">
+              BIS WORKFLOWS
+            </span>
+
+            <h2>Do more than ask questions.</h2>
+
+            <p>
+              Move from information to an actual BIS workflow.
+            </p>
+          </div>
+
+          <div className="copilot-workflow-grid">
+            {workflows.map((workflow) => (
+              <Link
+                key={workflow.title}
+                to={workflow.to}
+                className="copilot-workflow-card"
+              >
+                <div className="copilot-workflow-icon">
+                  {workflow.icon}
+                </div>
+
+                <h3>{workflow.title}</h3>
+
+                <p>{workflow.description}</p>
+
+                <span className="text-link">
+                  Open workflow →
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        {/* =====================================================
+            CAPABILITIES
+            ===================================================== */}
 
         <section className="copilot-section">
           <div className="copilot-section-heading">
@@ -343,6 +437,7 @@ export default function BISCopilot() {
           <div className="copilot-capability-grid">
             <div className="copilot-capability">
               <strong>Standards</strong>
+
               <span>
                 Discover and understand relevant Indian Standards.
               </span>
@@ -350,6 +445,7 @@ export default function BISCopilot() {
 
             <div className="copilot-capability">
               <strong>Certification</strong>
+
               <span>
                 Understand certification and conformity pathways.
               </span>
@@ -357,6 +453,7 @@ export default function BISCopilot() {
 
             <div className="copilot-capability">
               <strong>Testing</strong>
+
               <span>
                 Find recognized laboratories for testing needs.
               </span>
@@ -364,12 +461,17 @@ export default function BISCopilot() {
 
             <div className="copilot-capability">
               <strong>Compliance</strong>
+
               <span>
                 Convert requirements into actionable checklists.
               </span>
             </div>
           </div>
         </section>
+
+        {/* =====================================================
+            BOTTOM CTA
+            ===================================================== */}
 
         <section className="copilot-bottom-cta">
           <span className="copilot-kicker">
@@ -384,11 +486,17 @@ export default function BISCopilot() {
           </p>
 
           <div className="copilot-footer-links">
-            <Link to="/awareness" className="primary-btn">
+            <Link
+              to="/awareness"
+              className="primary-btn"
+            >
               BIS Knowledge Hub
             </Link>
 
-            <Link to="/standards" className="secondary-btn">
+            <Link
+              to="/standards"
+              className="secondary-btn"
+            >
               Explore Standards
             </Link>
           </div>

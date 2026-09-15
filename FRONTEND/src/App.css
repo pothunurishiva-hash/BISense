@@ -4664,3 +4664,495 @@ body {
 .home-profile-button:visited {
   color: #FFFFFF !important;
 }
+/* =========================================================
+   BISENSE - FINAL MOBILE NAVIGATION + RESPONSIVE FIXES
+   ========================================================= */
+
+/* ---------- Mobile menu button ---------- */
+
+.mobile-menu-button {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid #D6E0EE;
+  border-radius: 12px;
+  background: #FFFFFF;
+  color: #0F1B33;
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 500;
+  flex: 0 0 auto;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.mobile-menu-button:hover {
+  background: #F3F7FD;
+  border-color: #BFCFE5;
+}
+
+.mobile-menu-button:active {
+  transform: scale(0.96);
+}
+
+/* ---------- Mobile menu backdrop ---------- */
+
+.mobile-menu-backdrop {
+  display: none;
+}
+
+/* ---------- Mobile navigation panel ---------- */
+
+.mobile-navigation-menu {
+  display: none;
+}
+
+/* =========================================================
+   TABLET / MOBILE
+   ========================================================= */
+
+@media (max-width: 650px) {
+  .navbar {
+    position: sticky;
+    top: 10px;
+    width: 94%;
+    min-height: 62px;
+    padding: 10px 12px;
+    gap: 8px;
+    z-index: 1100;
+  }
+
+  .navbar .logo {
+    font-size: 19px;
+  }
+
+  /* Hide desktop navigation links on mobile */
+  .navbar .nav-links {
+    display: none !important;
+  }
+
+  .navbar .nav-actions {
+    display: flex !important;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  /* KEEP LOGIN VISIBLE */
+  .navbar .nav-actions .login-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 10px;
+    color: #30425F !important;
+    white-space: nowrap;
+  }
+
+  /* KEEP GET STARTED VISIBLE */
+  .navbar .nav-actions .navbar-get-started {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 11px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  /* Mobile hamburger */
+  .navbar .mobile-menu-button {
+    display: inline-flex !important;
+  }
+
+  /* Mobile backdrop */
+  .mobile-menu-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    padding: 0;
+    border: 0;
+    background: rgba(15, 27, 51, 0.28);
+    backdrop-filter: blur(3px);
+  }
+
+  /* Mobile menu panel */
+  .mobile-navigation-menu {
+    display: block;
+    position: fixed;
+    top: 82px;
+    left: 3%;
+    right: 3%;
+    max-height: calc(100vh - 98px);
+    overflow-y: auto;
+    z-index: 1101;
+
+    padding: 20px;
+
+    border: 1px solid #D8E2EF;
+    border-radius: 22px;
+    background: #FFFFFF;
+
+    box-shadow:
+      0 24px 60px rgba(22, 33, 61, 0.18),
+      0 8px 24px rgba(22, 33, 61, 0.08);
+
+    animation: mobileMenuIn 0.18s ease-out;
+  }
+
+  .mobile-navigation-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 15px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #E7EDF5;
+  }
+
+  .mobile-menu-eyebrow {
+    margin: 0;
+    color: #5873A0;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+  }
+
+  .mobile-navigation-header h2 {
+    margin: 6px 0 0;
+    color: #0F1B33;
+    font-size: 23px;
+    line-height: 1.1;
+    letter-spacing: -0.8px;
+  }
+
+  .mobile-menu-close {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid #D6E0EE;
+    border-radius: 10px;
+    background: #F7FAFF;
+    color: #0F1B33;
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  .mobile-navigation-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 15px;
+  }
+
+  .mobile-navigation-list a {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid transparent;
+    border-radius: 14px;
+    background: #F8FAFF;
+    color: #0F1B33;
+    text-decoration: none;
+    transition:
+      background 0.18s ease,
+      border-color 0.18s ease,
+      transform 0.18s ease;
+  }
+
+  .mobile-navigation-list a:hover {
+    background: #F0F5FF;
+    border-color: #D7E4F5;
+    transform: translateY(-1px);
+  }
+
+  .mobile-navigation-list a > span:last-child {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .mobile-navigation-list strong {
+    color: #16213D;
+    font-size: 14px;
+    line-height: 1.25;
+  }
+
+  .mobile-navigation-list small {
+    margin-top: 3px;
+    color: #718096;
+    font-size: 10px;
+    line-height: 1.4;
+  }
+
+  .mobile-nav-icon {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 11px;
+    background: #EAF1FF;
+    color: #2563EB;
+    font-size: 16px;
+  }
+
+  .mobile-navigation-list a:nth-child(2n) .mobile-nav-icon {
+    background: #FFEAF2;
+    color: #C0567E;
+  }
+
+  .mobile-navigation-footer {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid #E7EDF5;
+  }
+
+  .mobile-navigation-footer .primary-btn {
+    width: 100%;
+  }
+
+  /* Better mobile content sizing */
+  .hero h1,
+  .page-intro h1 {
+    color: #0F1B33;
+  }
+
+  .hero h1 span {
+    color: #2563EB;
+  }
+
+  .hero-text {
+    color: #4D5E78;
+  }
+
+  .section-heading h2,
+  .mode-card h3,
+  .feature-card h3,
+  .awareness-box h2 {
+    color: #0F1B33;
+  }
+
+  .section-heading > p:last-child,
+  .mode-card > p:not(.card-label),
+  .feature-card p,
+  .awareness-box p:last-child {
+    color: #5B6770;
+  }
+
+  /*
+     Prevent text-gradient / transparent-text effects from
+     making important mobile headings invisible.
+  */
+  .hero h1,
+  .hero h1 span,
+  .page-intro h1,
+  .section-heading h2,
+  .mode-card h3,
+  .feature-card h3,
+  .awareness-box h2,
+  .copilot-title,
+  .copilot-title span,
+  .copilot-section-heading h2 {
+    -webkit-text-fill-color: currentColor;
+  }
+
+  .hero h1,
+  .page-intro h1,
+  .section-heading h2,
+  .mode-card h3,
+  .feature-card h3,
+  .awareness-box h2,
+  .copilot-title,
+  .copilot-section-heading h2 {
+    color: #0F1B33;
+  }
+
+  .hero h1 span,
+  .copilot-title span {
+    color: #2563EB;
+  }
+
+  /* Copilot conversation must stay contained */
+  .copilot-conversation {
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .copilot-message {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .copilot-bubble {
+    min-width: 0;
+    max-width: calc(100vw - 120px);
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .copilot-conversation-header {
+    align-items: flex-start;
+  }
+
+  .copilot-conversation-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .copilot-clear-button {
+    padding: 7px 10px;
+    border: 1px solid #D6E0EE;
+    border-radius: 9px;
+    background: #F7FAFF;
+    color: #40526D;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .copilot-clear-button:hover {
+    background: #EEF4FF;
+  }
+}
+
+/* =========================================================
+   VERY SMALL PHONES
+   ========================================================= */
+
+@media (max-width: 480px) {
+  .navbar {
+    width: 96%;
+    padding: 9px 10px;
+  }
+
+  .navbar .logo {
+    font-size: 18px;
+  }
+
+  /*
+     On very small phones:
+     Login + hamburger remain visible.
+     Get Started is hidden only to preserve space.
+  */
+  .navbar .nav-actions .login-btn {
+    display: inline-flex !important;
+    padding: 8px 9px;
+    font-size: 11px;
+  }
+
+  .navbar .nav-actions .navbar-get-started {
+    display: none !important;
+  }
+
+  .navbar .mobile-menu-button {
+    display: inline-flex !important;
+    width: 38px;
+    height: 38px;
+    font-size: 21px;
+  }
+
+  .mobile-navigation-menu {
+    top: 77px;
+    left: 2%;
+    right: 2%;
+    max-height: calc(100vh - 90px);
+    padding: 16px;
+    border-radius: 19px;
+  }
+
+  .mobile-navigation-header h2 {
+    font-size: 21px;
+  }
+
+  .mobile-navigation-list a {
+    padding: 11px;
+  }
+
+  .mobile-nav-icon {
+    width: 35px;
+    height: 35px;
+  }
+
+  .copilot-bubble {
+    max-width: calc(100vw - 100px);
+  }
+
+  .copilot-conversation {
+    padding: 13px;
+  }
+}
+
+/* =========================================================
+   MOBILE MENU ANIMATION
+   ========================================================= */
+
+@keyframes mobileMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* =========================================================
+   AI RESPONSE / CONVERSATION LAYOUT
+   ========================================================= */
+
+.copilot-conversation {
+  position: relative;
+  z-index: 1;
+}
+
+.copilot-message-list {
+  min-width: 0;
+  overflow: visible;
+}
+
+.copilot-message {
+  min-width: 0;
+}
+
+.copilot-bubble {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.copilot-conversation-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.copilot-clear-button {
+  padding: 7px 10px;
+  border: 1px solid #D6E0EE;
+  border-radius: 9px;
+  background: #F7FAFF;
+  color: #40526D;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.copilot-clear-button:hover {
+  background: #EEF4FF;
+  color: #2563EB;
+}
