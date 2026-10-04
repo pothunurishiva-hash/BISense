@@ -5,6 +5,7 @@ import {
   Route,
   Navigate,
   Outlet,
+  useLocation,
 } from "react-router-dom";
 
 import { supabase } from "./lib/supabase";
@@ -23,6 +24,38 @@ import Profile from "./pages/Profile";
 import Awareness from "./pages/Awareness";
 import BISCopilot from "./pages/BISCopilot";
 
+/* =========================================================
+   BISENSE — APPLICATION BOOT SCREEN
+   Used while Supabase checks the current session.
+   ========================================================= */
+
+function AppLoadingScreen({ message = "Preparing BISense" }) {
+  return (
+    <div className="app-boot-screen" role="status" aria-live="polite">
+      <div className="app-boot-content">
+        <div className="app-boot-mark" aria-hidden="true">
+          <span className="app-boot-mark-core" />
+        </div>
+
+        <div className="app-boot-brand">BISense</div>
+
+        <div className="app-boot-message">{message}</div>
+
+        <div className="app-boot-loader" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   AUTH PROTECTION
+   Existing Supabase authentication logic is preserved.
+   ========================================================= */
+
 function ProtectedRoute() {
   const [status, setStatus] = useState("checking");
 
@@ -35,9 +68,7 @@ function ProtectedRoute() {
           data: { user },
         } = await supabase.auth.getUser();
 
-        if (!mounted) {
-          return;
-        }
+        if (!mounted) return;
 
         setStatus(user ? "authenticated" : "unauthenticated");
       } catch (error) {
@@ -64,16 +95,7 @@ function ProtectedRoute() {
   }, []);
 
   if (status === "checking") {
-    return (
-      <div className="app-page">
-        <main className="page-container">
-          <div className="loading-container">
-            <div className="loading-spinner"></div>
-            <span>Checking your BISense session...</span>
-          </div>
-        </main>
-      </div>
-    );
+    return <AppLoadingScreen message="Checking your BISense session" />;
   }
 
   if (status === "unauthenticated") {
@@ -83,12 +105,34 @@ function ProtectedRoute() {
   return <Outlet />;
 }
 
+/* =========================================================
+   PAGE TRANSITION WRAPPER
+   Gives each route a clean mount point for subtle animation.
+   ========================================================= */
+
+function PageFrame() {
+  const location = useLocation();
+
+  return (
+    <main className="main-content">
+      <div key={location.pathname} className="route-frame">
+        <Outlet />
+      </div>
+    </main>
+  );
+}
+
+/* =========================================================
+   APPLICATION
+   ========================================================= */
+
 export default function App() {
   return (
     <BrowserRouter>
       <div className="app">
-        <main className="main-content">
-          <Routes>
+        <Routes>
+          {/* Public routes */}
+          <Route element={<PageFrame />}>
             <Route path="/" element={<Home />} />
 
             <Route path="/login" element={<Login />} />
@@ -141,8 +185,14 @@ export default function App() {
             />
 
             <Route
-              element={<ProtectedRoute />}
-            >
+              path="/awareness"
+              element={<Awareness />}
+            />
+          </Route>
+
+          {/* Protected routes */}
+          <Route element={<ProtectedRoute />}>
+            <Route element={<PageFrame />}>
               <Route
                 path="/dashboard"
                 element={<Dashboard />}
@@ -153,18 +203,14 @@ export default function App() {
                 element={<Profile />}
               />
             </Route>
+          </Route>
 
-            <Route
-              path="/awareness"
-              element={<Awareness />}
-            />
-
-            <Route
-              path="*"
-              element={<Navigate to="/" replace />}
-            />
-          </Routes>
-        </main>
+          {/* Fallback */}
+          <Route
+            path="*"
+            element={<Navigate to="/" replace />}
+          />
+        </Routes>
       </div>
     </BrowserRouter>
   );

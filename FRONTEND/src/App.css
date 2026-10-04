@@ -5156,3 +5156,99 @@ body {
   background: #EEF4FF;
   color: #2563EB;
 }
+/* =========================================================
+   BISENSE GLOBAL LAYOUT SAFETY FIX
+   ========================================================= */
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+#root {
+  text-align: left;
+}
+
+/* Prevent global rules from squeezing normal text */
+nav,
+header,
+main,
+section,
+footer,
+div {
+  min-width: 0;
+}
+
+/* Logo must stay horizontal */
+.logo,
+.navbar-logo,
+.nav-brand,
+.brand,
+.brand-logo,
+.logo span,
+.navbar-logo span {
+  width: auto !important;
+  min-width: max-content !important;
+  max-width: none !important;
+  display: inline-flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  white-space: nowrap !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+}
+
+/* Navigation must remain a horizontal row */
+nav ul,
+.nav-links,
+.navbar-links,
+.nav-menu,
+.navigation,
+.navbar-nav {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+/* Normal text should wrap by words, not characters */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+/* Home/content containers should not collapse */
+.home-page,
+.home-container,
+.home-hero,
+.hero,
+.hero-content,
+.features-section,
+.features-container {
+  min-width: 0;
+  width: 100%;
+}
+
+/* Stop arbitrary spans from becoming vertical columns */
+span {
+  max-width: none;
+}
+
+/* Links should not inherit strange width constraints */
+a {
+  min-width: 0;
+}

@@ -978,30 +978,33 @@ function Home() {
         }
 
         /* =========================
-           3D B → BISENSE
+           CLEAN B → BISENSE
+           Fixed geometry prevents overlap.
         ========================= */
 
         .bis-command-visual {
-          width: 70px;
+          width: 76px;
           height: 58px;
 
-          flex: 0 0 auto;
+          flex: 0 0 76px;
 
           display: grid;
           place-items: center;
 
-          perspective: 500px;
+          overflow: visible;
+
+          perspective: 600px;
         }
 
         .bis-command-brand {
-          width: 68px;
-          height: 48px;
+          width: 76px;
+          height: 50px;
 
           position: relative;
 
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          display: block;
+
+          overflow: visible;
 
           transform-style: preserve-3d;
         }
@@ -1010,6 +1013,9 @@ function Home() {
           content: "";
 
           position: absolute;
+
+          left: 19px;
+          top: 6px;
 
           width: 38px;
           height: 38px;
@@ -1021,6 +1027,8 @@ function Home() {
           box-shadow:
             0 8px 18px rgba(15,27,51,.16),
             inset 0 1px 0 rgba(255,255,255,.12);
+
+          transform-origin: center;
 
           animation:
             bisCommandTile
@@ -1034,12 +1042,17 @@ function Home() {
 
           position: absolute;
 
+          left: 15px;
+          top: 2px;
+
           width: 46px;
           height: 46px;
 
           border-radius: 50%;
 
           border: 1px solid rgba(37,99,235,.15);
+
+          transform-origin: center;
 
           animation:
             bisCommandHalo
@@ -1051,16 +1064,26 @@ function Home() {
         .bis-command-brand-b {
           position: absolute;
 
-          z-index: 3;
+          z-index: 4;
+
+          left: 32px;
+          top: 15px;
+
+          width: 13px;
 
           color: #ffffff;
 
           font-size: 18px;
+          line-height: 1;
           font-weight: 900;
           letter-spacing: -.8px;
 
+          text-align: center;
+
           text-shadow:
             0 2px 8px rgba(0,0,0,.2);
+
+          transform-origin: center;
 
           animation:
             bisCommandB
@@ -1072,24 +1095,26 @@ function Home() {
         .bis-command-brand-word {
           position: absolute;
 
-          z-index: 2;
+          z-index: 3;
+
+          left: 38px;
+          top: 17px;
 
           display: flex;
           align-items: center;
 
           gap: 0;
 
-          left: 27px;
-
           color: #0f1b33;
 
           font-size: 14px;
+          line-height: 1;
           font-weight: 850;
           letter-spacing: -.7px;
 
           white-space: nowrap;
 
-          transform-style: preserve-3d;
+          pointer-events: none;
         }
 
         .bis-command-brand-word span {
@@ -1098,9 +1123,11 @@ function Home() {
           opacity: 0;
 
           transform:
-            translateZ(-22px)
+            translate3d(-9px, 0, -22px)
             scale(.45)
             rotateY(65deg);
+
+          transform-origin: left center;
 
           animation:
             bisCommandLetter
@@ -1294,62 +1321,87 @@ function Home() {
 
         @keyframes bisCommandTile {
           0%,
-          13% {
+          12% {
+            left: 19px;
+            top: 6px;
             width: 38px;
             height: 38px;
             border-radius: 11px;
 
             transform:
-              translateX(0)
-              rotateY(0deg);
+              translate3d(0,0,0)
+              rotateY(0deg)
+              scale(1);
           }
 
-          23%,
-          61% {
+          21%,
+          58% {
+            left: 4px;
+            top: 10px;
             width: 31px;
             height: 31px;
             border-radius: 9px;
 
             transform:
-              translateX(-17px)
-              rotateY(-5deg);
+              translate3d(0,0,0)
+              rotateY(-5deg)
+              scale(1);
           }
 
-          73% {
+          68% {
+            left: 4px;
+            top: 10px;
+            width: 31px;
+            height: 31px;
+            border-radius: 9px;
+
+            transform:
+              translate3d(0,0,0)
+              rotateY(0deg)
+              scale(1);
+          }
+
+          77% {
+            left: 19px;
+            top: 6px;
             width: 38px;
             height: 38px;
             border-radius: 11px;
 
             transform:
-              translateX(0)
-              rotateY(0deg);
-          }
-
-          80% {
-            transform:
-              translateX(0)
+              translate3d(0,0,0)
+              rotateY(0deg)
               rotateZ(-4deg)
               scale(1.06);
           }
 
-          84% {
+          81% {
             transform:
-              translateX(0)
+              translate3d(0,0,0)
+              rotateY(0deg)
               rotateZ(4deg)
               scale(1.03);
           }
 
-          88% {
+          85% {
             transform:
-              translateX(0)
+              translate3d(0,0,0)
+              rotateY(0deg)
               rotateZ(-2deg)
               scale(1.01);
           }
 
-          92%,
+          90%,
           100% {
+            left: 19px;
+            top: 6px;
+            width: 38px;
+            height: 38px;
+            border-radius: 11px;
+
             transform:
-              translateX(0)
+              translate3d(0,0,0)
+              rotateY(0deg)
               rotateZ(0)
               scale(1);
           }
@@ -1357,97 +1409,78 @@ function Home() {
 
         @keyframes bisCommandB {
           0%,
-          13% {
+          12% {
             transform:
-              translateX(0)
+              translate3d(0,0,0)
               scale(1)
               rotateZ(0);
           }
 
-          23%,
-          61% {
+          21%,
+          68% {
             transform:
-              translateX(-17px)
-              scale(.85)
+              translate3d(-15px,4px,0)
+              scale(.88)
               rotateZ(0);
           }
 
-          73% {
+          77% {
             transform:
-              translateX(0)
+              translate3d(0,0,0)
               scale(1.02)
-              rotateZ(0);
+              rotateZ(-4deg);
           }
 
-          80% {
+          81% {
             transform:
-              translateX(0)
-              rotateZ(-4deg)
-              scale(1.08);
+              translate3d(0,0,0)
+              scale(1.04)
+              rotateZ(4deg);
           }
 
-          84% {
+          85% {
             transform:
-              translateX(0)
-              rotateZ(4deg)
-              scale(1.04);
+              translate3d(0,0,0)
+              scale(1.02)
+              rotateZ(-2deg);
           }
 
-          88% {
-            transform:
-              translateX(0)
-              rotateZ(-2deg)
-              scale(1.02);
-          }
-
-          92%,
+          90%,
           100% {
             transform:
-              translateX(0)
-              rotateZ(0)
-              scale(1);
+              translate3d(0,0,0)
+              scale(1)
+              rotateZ(0);
           }
         }
 
         @keyframes bisCommandLetter {
           0%,
-          13% {
+          20% {
             opacity: 0;
 
             transform:
-              translateZ(-22px)
-              translateX(-12px)
+              translate3d(-9px,0,-22px)
               scale(.45)
               rotateY(65deg);
           }
 
-          23% {
+          29%,
+          58% {
             opacity: 1;
 
             transform:
-              translateZ(0)
-              translateX(0)
+              translate3d(0,0,0)
               scale(1)
               rotateY(0deg);
           }
 
-          61% {
-            opacity: 1;
-
-            transform:
-              translateZ(0)
-              translateX(0)
-              scale(1)
-              rotateY(0deg);
-          }
-
-          73%,
+          67%,
           100% {
             opacity: 0;
 
             transform:
-              translateZ(-18px)
-              translateX(-10px)
+              translate3d(-6px,0,-18px)
               scale(.55)
               rotateY(-45deg);
           }
@@ -1455,26 +1488,29 @@ function Home() {
 
         @keyframes bisCommandHalo {
           0%,
-          13% {
+          12% {
             opacity: .55;
 
             transform:
+              translate3d(0,0,0)
               scale(.92);
           }
 
-          30%,
+          28%,
           58% {
             opacity: .18;
 
             transform:
+              translate3d(-6px,4px,0)
               scale(1.14);
           }
 
-          75%,
+          78%,
           100% {
             opacity: .55;
 
             transform:
+              translate3d(0,0,0)
               scale(.92);
           }
         }
@@ -2443,13 +2479,181 @@ function Home() {
             gap: 10px;
           }
 
+          /*
+            Keep enough horizontal room for the complete
+            BISense mark even on narrow phones.
+          */
           .bis-command-visual {
-            width: 56px;
+            width: 76px;
+            flex-basis: 76px;
           }
 
           .bis-command-brand {
-            transform: scale(.9);
-            transform-origin: center;
+            width: 76px;
+            transform: none;
+          }
+
+          .bis-command-brand-b {
+            left: 32px;
+            top: 16px;
+            width: 12px;
+            font-size: 17px;
+          }
+
+          .bis-command-brand-word {
+            left: 37px;
+            top: 18px;
+            font-size: 13px;
+            letter-spacing: -.65px;
+          }
+
+          .bis-command-brand::before {
+            left: 19px;
+            top: 7px;
+
+            width: 36px;
+            height: 36px;
+
+            border-radius: 10px;
+          }
+
+          .bis-command-brand::after {
+            left: 14px;
+            top: 2px;
+
+            width: 45px;
+            height: 45px;
+          }
+
+          @keyframes bisCommandTile {
+            0%,
+            12% {
+              left: 19px;
+              top: 7px;
+              width: 36px;
+              height: 36px;
+              border-radius: 10px;
+
+              transform:
+                translate3d(0,0,0)
+                rotateY(0deg)
+                scale(1);
+            }
+
+            21%,
+            58% {
+              left: 5px;
+              top: 10px;
+              width: 29px;
+              height: 29px;
+              border-radius: 8px;
+
+              transform:
+                translate3d(0,0,0)
+                rotateY(-4deg)
+                scale(1);
+            }
+
+            68% {
+              left: 5px;
+              top: 10px;
+              width: 29px;
+              height: 29px;
+              border-radius: 8px;
+
+              transform:
+                translate3d(0,0,0)
+                rotateY(0deg)
+                scale(1);
+            }
+
+            77% {
+              left: 19px;
+              top: 7px;
+              width: 36px;
+              height: 36px;
+              border-radius: 10px;
+
+              transform:
+                translate3d(0,0,0)
+                rotateZ(-4deg)
+                scale(1.05);
+            }
+
+            81% {
+              transform:
+                translate3d(0,0,0)
+                rotateZ(4deg)
+                scale(1.03);
+            }
+
+            85% {
+              transform:
+                translate3d(0,0,0)
+                rotateZ(-2deg)
+                scale(1.01);
+            }
+
+            90%,
+            100% {
+              left: 19px;
+              top: 7px;
+              width: 36px;
+              height: 36px;
+              border-radius: 10px;
+
+              transform:
+                translate3d(0,0,0)
+                rotateZ(0)
+                scale(1);
+            }
+          }
+
+          @keyframes bisCommandB {
+            0%,
+            12% {
+              transform:
+                translate3d(0,0,0)
+                scale(1)
+                rotateZ(0);
+            }
+
+            21%,
+            68% {
+              transform:
+                translate3d(-14px,3px,0)
+                scale(.87)
+                rotateZ(0);
+            }
+
+            77% {
+              transform:
+                translate3d(0,0,0)
+                scale(1.02)
+                rotateZ(-4deg);
+            }
+
+            81% {
+              transform:
+                translate3d(0,0,0)
+                scale(1.04)
+                rotateZ(4deg);
+            }
+
+            85% {
+              transform:
+                translate3d(0,0,0)
+                scale(1.02)
+                rotateZ(-2deg);
+            }
+
+            90%,
+            100% {
+              transform:
+                translate3d(0,0,0)
+                scale(1)
+                rotateZ(0);
+            }
           }
 
           .bis-command-line {
