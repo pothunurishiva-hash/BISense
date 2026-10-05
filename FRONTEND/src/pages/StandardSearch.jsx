@@ -3,7 +3,13 @@ import StandardCard from "../components/StandardCard";
 import Navbar from "../components/Navbar";
 
 const API_BASE = "";
+const BACKEND_URL = "https://bisense-5ozn.onrender.com";
 const SEARCH_HISTORY_KEY = "bisense_recent_searches";
+const STANDARDS_CACHE_KEY = "bisense_standards_cache_v1";
+const STANDARDS_CACHE_TTL = 10 * 60 * 1000;
+const REQUEST_TIMEOUT_MS = 25000;
+
+let backendWarmPromise = null;
 
 function saveRecentSearch(query, resultCount) {
   const cleanQuery = String(query || "").trim();
@@ -45,24 +51,203 @@ function normalize(value) {
   return String(value || "").trim().toLowerCase();
 }
 
-async function fetchStandards(url) {
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-    },
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Standards request failed with status ${response.status}`
-    );
+function getStandardsArray(payload) {
+  if (Array.isArray(payload)) {
+    return payload;
   }
 
-  const data = await response.json();
+  const candidates = [
+    payload?.results,
+    payload?.standards,
+    payload?.items,
+    payload?.data,
+    payload?.data?.results,
+    payload?.data?.standards,
+    payload?.data?.items,
+  ];
 
-  return Array.isArray(data?.results) ? data.results : [];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate;
+    }
+  }
+
+  return [];
+}
+
+function getCachedStandards() {
+  try {
+    const raw = sessionStorage.getItem(STANDARDS_CACHE_KEY);
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+
+    if (
+      !parsed ||
+      !Array.isArray(parsed.items) ||
+      !parsed.timestamp
+    ) {
+      return null;
+    }
+
+    if (
+      Date.now() - Number(parsed.timestamp) >
+      STANDARDS_CACHE_TTL
+    ) {
+      return null;
+    }
+
+    return parsed.items;
+  } catch {
+    return null;
+  }
+}
+
+function cacheStandards(items) {
+  try {
+    sessionStorage.setItem(
+      STANDARDS_CACHE_KEY,
+      JSON.stringify({
+        timestamp: Date.now(),
+        items,
+      })
+    );
+  } catch {
+    // Ignore storage quota/privacy errors.
+  }
+}
+
+function warmBackendInBackground() {
+  if (backendWarmPromise) {
+    return backendWarmPromise;
+  }
+
+  backendWarmPromise = fetch(
+    `${BACKEND_URL}/`,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+    }
+  )
+    .catch(() => null)
+    .finally(() => {
+      window.setTimeout(() => {
+        backendWarmPromise = null;
+      }, 30000);
+    });
+
+  return backendWarmPromise;
+}
+
+async function fetchWithTimeout(url, options = {}, timeout = REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => {
+    controller.abort();
+  }, timeout);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function readPayload(response) {
+  const contentType =
+    response.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    try {
+      return await response.json();
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    const raw = await response.text();
+
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return { raw };
+    }
+  } catch {
+    return null;
+  }
+}
+
+async function requestStandards(url) {
+  const response = await fetchWithTimeout(
+    url,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+    },
+    REQUEST_TIMEOUT_MS
+  );
+
+  const payload = await readPayload(response);
+
+  return {
+    response,
+    payload,
+    results: getStandardsArray(payload),
+  };
+}
+
+async function fetchStandards(path) {
+  warmBackendInBackground();
+
+  const urls = [
+    `${BACKEND_URL}${path}`,
+    `${API_BASE}${path}`,
+  ];
+
+  let lastStatus = 0;
+
+  for (let index = 0; index < urls.length; index += 1) {
+    const url = urls[index];
+
+    try {
+      const result = await requestStandards(url);
+
+      if (result.response.ok && result.payload) {
+        return result.results;
+      }
+
+      lastStatus = result.response.status;
+
+      /*
+       * A 404 from the Vercel rewrite is expected in the current deployment.
+       * Continue to the next transport instead of failing the whole page.
+       */
+    } catch (error) {
+      if (index === urls.length - 1) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error(
+    `Standards request failed${lastStatus ? ` with status ${lastStatus}` : ""}.`
+  );
 }
 
 export default function StandardSearch() {
@@ -180,17 +365,43 @@ export default function StandardSearch() {
       setError("");
 
       try {
-        let standards = await fetchStandards(
-          `${API_BASE}/api/standards/search?q=`
-        );
+        const cachedStandards = getCachedStandards();
+
+        if (cachedStandards?.length) {
+          setAllStandards(cachedStandards);
+          setSearchResults(cachedStandards);
+          setVisibleResults(
+            applyFiltersToItems(
+              cachedStandards,
+              "All",
+              "All",
+              "All"
+            )
+          );
+          setLoadingAll(false);
+        }
+
+        let standards = [];
+
+        try {
+          standards = await fetchStandards(
+            "/api/standards/search?q="
+          );
+        } catch (firstError) {
+          console.warn(
+            "Initial BIS standards request failed:",
+            firstError
+          );
+        }
 
         /*
-         * Fallback for backends that behave differently with an
-         * empty q parameter.
+         * Some backend/database states may return an empty result for q=.
+         * The deployed service also supports a normal text query, so use
+         * q=IS as a compatibility fallback.
          */
         if (standards.length === 0) {
           standards = await fetchStandards(
-            `${API_BASE}/api/standards/search?q=IS`
+            "/api/standards/search?q=IS"
           );
         }
 
@@ -198,6 +409,28 @@ export default function StandardSearch() {
           return;
         }
 
+        if (!standards.length && cachedStandards?.length) {
+          setAllStandards(cachedStandards);
+          setSearchResults(cachedStandards);
+          setVisibleResults(
+            applyFiltersToItems(
+              cachedStandards,
+              "All",
+              "All",
+              "All"
+            )
+          );
+          setError("");
+          return;
+        }
+
+        if (!standards.length) {
+          throw new Error(
+            "BIS standards service returned no standards."
+          );
+        }
+
+        cacheStandards(standards);
         setAllStandards(standards);
         setSearchResults(standards);
         setVisibleResults(
@@ -285,10 +518,9 @@ export default function StandardSearch() {
          */
         results = allStandards;
       } else {
+        const encodedQuery = encodeURIComponent(cleanQuery);
         results = await fetchStandards(
-          `${API_BASE}/api/standards/search?q=${encodeURIComponent(
-            cleanQuery
-          )}`
+          `/api/standards/search?q=${encodedQuery}`
         );
       }
 

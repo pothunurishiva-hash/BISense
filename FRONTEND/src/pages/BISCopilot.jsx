@@ -1,21 +1,32 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 
 const CHAT_HISTORY_KEY = "bisense_recent_chats";
+const CHAT_SESSION_KEY = "bisense_copilot_session_v3";
 const FIRST_AI_REQUEST_KEY = "bisense_ai_request_started";
+const BACKEND_URL = "https://bisense-5ozn.onrender.com";
 
-function getAiLoadingCopy(isFirstRequest) {
+function getAiLoadingCopy(isFirstRequest, backendWaking) {
+  if (backendWaking) {
+    return {
+      title: "Getting BISense ready",
+      subtitle: "Connecting to the standards intelligence service",
+      small: "The service may take a moment to wake up. Your question is saved.",
+    };
+  }
+
   return isFirstRequest
     ? {
-        title: "Getting BISense AI ready",
-        subtitle:
-          "Preparing your intelligent assistant for this request",
+        title: "Preparing BISense AI",
+        subtitle: "Retrieving and analyzing relevant BIS information",
+        small: "Your question is saved while the answer is prepared.",
       }
     : {
         title: "BISense is thinking",
         subtitle: "Analyzing your request",
+        small: "Checking the relevant standards and BIS information.",
       };
 }
 
@@ -39,6 +50,59 @@ function getSourceLabel(source) {
   );
 }
 
+function normalizeAgent(agent) {
+  if (!agent) return null;
+
+  const steps = Array.isArray(agent.steps)
+    ? agent.steps
+    : agent.steps
+      ? [String(agent.steps)]
+      : [];
+
+  return {
+    ...agent,
+    name: agent.name || agent.workflow || "standards_intelligence",
+    steps,
+  };
+}
+
+function loadSessionConversation() {
+  try {
+    const raw = sessionStorage.getItem(CHAT_SESSION_KEY);
+    if (!raw) return { messages: [], draft: "" };
+
+    const parsed = JSON.parse(raw);
+    const messages = Array.isArray(parsed?.messages)
+      ? parsed.messages.filter((item) => !item?.pending)
+      : [];
+
+    return {
+      messages,
+      draft: typeof parsed?.draft === "string" ? parsed.draft : "",
+    };
+  } catch {
+    return { messages: [], draft: "" };
+  }
+}
+
+function persistSessionConversation(messages, draft = "") {
+  try {
+    const safeMessages = (Array.isArray(messages) ? messages : [])
+      .filter((item) => item && !item.pending)
+      .slice(-30);
+
+    sessionStorage.setItem(
+      CHAT_SESSION_KEY,
+      JSON.stringify({
+        messages: safeMessages,
+        draft: String(draft || "").slice(0, 4000),
+      })
+    );
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
 function saveChatToHistory(question, answer) {
   try {
     const existing = JSON.parse(
@@ -57,21 +121,14 @@ function saveChatToHistory(question, answer) {
       entry,
       ...existing.filter((item) => {
         const previousQuestion = String(
-          item?.question ||
-            item?.query ||
-            item?.title ||
-            ""
+          item?.question || item?.query || item?.title || ""
         ).trim();
 
         return previousQuestion !== question;
       }),
     ].slice(0, 8);
 
-    localStorage.setItem(
-      CHAT_HISTORY_KEY,
-      JSON.stringify(updated)
-    );
-
+    localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(updated));
     window.dispatchEvent(new Event("storage"));
   } catch {
     // Ignore localStorage errors.
@@ -128,20 +185,8 @@ function CopilotIcon({ type, size = 18 }) {
     case "workflow":
       return (
         <svg {...props}>
-          <rect
-            x="4"
-            y="4"
-            width="6"
-            height="6"
-            rx="1"
-          />
-          <rect
-            x="14"
-            y="14"
-            width="6"
-            height="6"
-            rx="1"
-          />
+          <rect x="4" y="4" width="6" height="6" rx="1" />
+          <rect x="14" y="14" width="6" height="6" rx="1" />
           <path d="M10 7h4v10" />
           <path d="M14 17h-4V7" />
         </svg>
@@ -159,13 +204,7 @@ function CopilotIcon({ type, size = 18 }) {
     case "copy":
       return (
         <svg {...props}>
-          <rect
-            x="8"
-            y="8"
-            width="11"
-            height="11"
-            rx="2"
-          />
+          <rect x="8" y="8" width="11" height="11" rx="2" />
           <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
         </svg>
       );
@@ -181,8 +220,7 @@ function AnswerContent({ content }) {
   if (!lines.length) {
     return (
       <p className="bis-answer-empty">
-        I could not generate an answer for that
-        request.
+        I could not generate an answer for that request.
       </p>
     );
   }
@@ -204,12 +242,7 @@ function AnswerContent({ content }) {
             <div
               className="bis-answer-bullet"
               key={index}
-              style={{
-                animationDelay: `${Math.min(
-                  index * 40,
-                  300
-                )}ms`,
-              }}
+              style={{ animationDelay: `${Math.min(index * 40, 300)}ms` }}
             >
               <span />
               <p>{cleanLine}</p>
@@ -225,12 +258,7 @@ function AnswerContent({ content }) {
                 : "bis-answer-paragraph"
             }
             key={index}
-            style={{
-              animationDelay: `${Math.min(
-                index * 40,
-                300
-              )}ms`,
-            }}
+            style={{ animationDelay: `${Math.min(index * 40, 300)}ms` }}
           >
             {cleanLine}
           </p>
@@ -240,14 +268,115 @@ function AnswerContent({ content }) {
   );
 }
 
+const WORKFLOWS = [
+  {
+    id: "standard",
+    icon: "search",
+    title: "Find a Standard",
+    description:
+      "Search Indian Standards by product, keyword or IS number and understand where to begin.",
+    summary:
+      "BISense turns a general product or standards query into a structured standard-discovery task so the user can move from uncertainty to a verifiable starting point.",
+    steps: [
+      ["Input", "Enter a product name, keyword or IS number."],
+      ["Identify", "BISense interprets the request and looks for relevant standard records."],
+      ["Review", "The result exposes standard details such as title, scope, status or edition where available."],
+      ["Verify", "The user can inspect the available BIS reference/source information."],
+      ["Continue", "Move into comparison, certification, laboratory or compliance workflows."],
+    ],
+    result:
+      "A structured starting point for standards research instead of manually searching across disconnected information.",
+    to: "/standards",
+  },
+  {
+    id: "product",
+    icon: "workflow",
+    title: "Analyze Product",
+    description:
+      "Start from a product instead of a standard number and explore potentially relevant BIS information.",
+    summary:
+      "Useful when the user knows the product but does not know which Indian Standard or BIS service to look for.",
+    steps: [
+      ["Input", "Upload a product image or provide product details."],
+      ["Understand", "The product-analysis workflow extracts useful product/category context."],
+      ["Match", "That context is used to surface potentially relevant BIS standards or considerations."],
+      ["Explain", "BISense presents the result in simpler, user-oriented language."],
+      ["Act", "Continue toward certification guidance, testing or compliance support."],
+    ],
+    result:
+      "The user starts with what they actually know—the product—and BISense helps connect it to the standards journey.",
+    to: "/product-analyzer",
+  },
+  {
+    id: "compliance",
+    icon: "shield",
+    title: "Check Compliance",
+    description:
+      "Turn available standard information into a practical checklist and track progress.",
+    summary:
+      "The compliance workflow converts information into visible tasks so users can keep track of what remains to be reviewed or completed.",
+    steps: [
+      ["Select", "Start from the relevant standard or product context."],
+      ["Build", "BISense organizes available requirements into checklist-oriented items."],
+      ["Track", "Mark requirements as checked or pending and keep notes where supported."],
+      ["Review", "See the remaining work instead of repeatedly re-reading the source material."],
+      ["Report", "Use the saved/printable workflow support when a record is needed."],
+    ],
+    result:
+      "A reusable compliance workspace rather than a one-time AI answer.",
+    to: "/compliance",
+  },
+  {
+    id: "certification",
+    icon: "book",
+    title: "Certification",
+    description:
+      "Explore certification-oriented information, requirements and next steps for a product.",
+    summary:
+      "BISense provides guidance around potentially relevant certification pathways without making an official BIS certification decision.",
+    steps: [
+      ["Context", "Start with a product, category or identified standard."],
+      ["Identify", "Surface potentially relevant certification/conformity information available to the platform."],
+      ["Explain", "Summarize the process in plain language."],
+      ["Verify", "Point the user back to official BIS information for important current requirements."],
+      ["Continue", "Move into testing or compliance-oriented workflows."],
+    ],
+    result:
+      "A clearer certification-oriented starting point with an explicit official-verification path.",
+    to: "/certification",
+  },
+  {
+    id: "laboratory",
+    icon: "search",
+    title: "Find Laboratory",
+    description:
+      "Search BIS-recognized testing laboratories using available standard and location information.",
+    summary:
+      "The laboratory workflow connects standards/testing needs with laboratory discovery so users know what to look for next.",
+    steps: [
+      ["Need", "Start from a product, standard or testing requirement."],
+      ["Search", "Use the laboratory workflow to search available BIS LIMS-related information."],
+      ["Filter", "Narrow results using the available information and filters."],
+      ["Inspect", "Review the laboratory information returned by the platform."],
+      ["Navigate", "Use the available details to continue the testing process."],
+    ],
+    result:
+      "Testing support is connected to the standards journey instead of being treated as a separate search task.",
+    to: "/laboratories",
+  },
+];
+
 export default function BISCopilot() {
-  const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState([]);
+  const initialSession = useMemo(loadSessionConversation, []);
+  const [message, setMessage] = useState(initialSession.draft);
+  const [messages, setMessages] = useState(initialSession.messages);
   const [loading, setLoading] = useState(false);
+  const [backendWaking, setBackendWaking] = useState(false);
   const [error, setError] = useState("");
-  const [isFirstRequest, setIsFirstRequest] =
-    useState(false);
+  const [isFirstRequest, setIsFirstRequest] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [selectedWorkflow, setSelectedWorkflow] = useState(null);
+  const warmupPromiseRef = useRef(null);
 
   const suggestions = [
     "What is IS 456?",
@@ -256,88 +385,192 @@ export default function BISCopilot() {
     "How do I check compliance?",
   ];
 
-  const workflows = [
-    {
-      icon: "search",
-      title: "Find a Standard",
-      description:
-        "Search Indian Standards and understand their purpose, scope and status.",
-      to: "/standards",
-    },
-    {
-      icon: "workflow",
-      title: "Analyze Product",
-      description:
-        "Identify relevant standards and certification considerations for a product.",
-      to: "/product-analyzer",
-    },
-    {
-      icon: "shield",
-      title: "Check Compliance",
-      description:
-        "Turn a standard into a practical compliance checklist.",
-      to: "/compliance",
-    },
-    {
-      icon: "book",
-      title: "Certification",
-      description:
-        "Explore applicable certification and conformity requirements.",
-      to: "/certification",
-    },
-    {
-      icon: "search",
-      title: "Find Laboratory",
-      description:
-        "Search BIS-recognized laboratories by name and location.",
-      to: "/laboratories",
-    },
-  ];
-
   useEffect(() => {
-    try {
-      const alreadyStarted =
-        sessionStorage.getItem(
-          FIRST_AI_REQUEST_KEY
-        ) === "1";
+    persistSessionConversation(initialSession.messages, initialSession.draft);
 
-      if (!alreadyStarted) {
-        setIsFirstRequest(true);
-      }
+    try {
+      setIsFirstRequest(
+        sessionStorage.getItem(FIRST_AI_REQUEST_KEY) !== "1"
+      );
     } catch {
       setIsFirstRequest(true);
     }
+  }, [initialSession.messages, initialSession.draft]);
+
+  useEffect(() => {
+    persistSessionConversation(messages, message);
+  }, [messages, message]);
+
+  useEffect(() => {
+    const warmBackend = async () => {
+      setBackendWaking(true);
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 18000);
+
+      try {
+        await fetch(`${BACKEND_URL}/`, {
+          method: "GET",
+          cache: "no-store",
+          signal: controller.signal,
+        });
+      } catch {
+        // The actual chat request will retry through both the Vercel route and Render directly.
+      } finally {
+        window.clearTimeout(timeout);
+        setBackendWaking(false);
+      }
+    };
+
+    warmupPromiseRef.current = warmBackend();
+
+    return () => {
+      warmupPromiseRef.current = null;
+    };
   }, []);
 
-  const sendMessage = async (text = message) => {
-    const cleanMessage = String(
-      text || ""
-    ).trim();
+  useEffect(() => {
+    if (!selectedWorkflow) return undefined;
 
-    if (!cleanMessage || loading) {
-      return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setSelectedWorkflow(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [selectedWorkflow]);
+
+  const parseResponse = async (response) => {
+    const contentType = response.headers.get("content-type") || "";
+    const rawText = await response.text();
+
+    let data = null;
+    if (contentType.includes("application/json")) {
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        data = null;
+      }
     }
+
+    if (!response.ok) {
+      const backendMessage =
+        data?.detail ||
+        data?.message ||
+        data?.error ||
+        rawText ||
+        `HTTP ${response.status}`;
+
+      const error = new Error(String(backendMessage));
+      error.status = response.status;
+      error.transient = [502, 503, 504].includes(response.status);
+      throw error;
+    }
+
+    if (data && typeof data === "object") {
+      return data;
+    }
+
+    if (rawText.trim()) {
+      return { answer: rawText.trim() };
+    }
+
+    throw new Error("BIS AI returned an empty response.");
+  };
+
+  const postChat = async (url, cleanMessage) => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 90000);
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/plain, */*",
+        },
+        body: JSON.stringify({ message: cleanMessage }),
+        signal: controller.signal,
+      });
+
+      return await parseResponse(response);
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        const timeoutError = new Error(
+          "BIS AI is taking longer than expected. Please try again."
+        );
+        timeoutError.transient = true;
+        throw timeoutError;
+      }
+
+      throw error;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  };
+
+  const getChatResponse = async (cleanMessage) => {
+    if (warmupPromiseRef.current) {
+      try {
+        await warmupPromiseRef.current;
+      } catch {
+        // Continue to chat request even if warm-up failed.
+      }
+    }
+
+    let lastError = null;
+
+    try {
+      return await postChat("/api/chat", cleanMessage);
+    } catch (error) {
+      lastError = error;
+    }
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await postChat(`${BACKEND_URL}/api/chat`, cleanMessage);
+      } catch (error) {
+        lastError = error;
+
+        if (!error?.transient && attempt === 0) {
+          break;
+        }
+
+        if (attempt < 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 2500));
+        }
+      }
+    }
+
+    throw lastError || new Error("BIS AI could not be reached.");
+  };
+
+  const sendMessage = async (text = message) => {
+    const cleanMessage = String(text || "").trim();
+
+    if (!cleanMessage || loading) return;
 
     let firstRequest = false;
 
     try {
       firstRequest =
-        sessionStorage.getItem(
-          FIRST_AI_REQUEST_KEY
-        ) !== "1";
-
-      if (firstRequest) {
-        sessionStorage.setItem(
-          FIRST_AI_REQUEST_KEY,
-          "1"
-        );
-      }
+        sessionStorage.getItem(FIRST_AI_REQUEST_KEY) !== "1";
+      sessionStorage.setItem(FIRST_AI_REQUEST_KEY, "1");
     } catch {
       firstRequest = messages.length === 0;
     }
 
     setIsFirstRequest(firstRequest);
     setLoading(true);
+    setBackendWaking(Boolean(warmupPromiseRef.current));
     setError("");
 
     const requestId = `${Date.now()}-${Math.random()
@@ -362,137 +595,29 @@ export default function BISCopilot() {
     setMessage("");
 
     try {
-      let response = null;
-
-      try {
-        response = await fetch("/api/chat", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({
-            message: cleanMessage,
-          }),
-        });
-      } catch (proxyError) {
-        console.warn(
-          "Vercel API request failed:",
-          proxyError
-        );
-      }
-
-      /*
-       * Fallback to Render directly.
-       */
-      if (!response || !response.ok) {
-        try {
-          response = await fetch(
-            "https://bisense-5ozn.onrender.com/api/chat",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type":
-                  "application/json",
-                Accept: "application/json",
-              },
-              body: JSON.stringify({
-                message: cleanMessage,
-              }),
-            }
-          );
-        } catch (directError) {
-          console.error(
-            "Direct Render request failed:",
-            directError
-          );
-
-          throw new Error(
-            "BIS AI could not be reached. Please try again in a few seconds."
-          );
-        }
-      }
-
-      const contentType =
-        response.headers.get("content-type") || "";
-
-      let data = null;
-      let rawText = "";
-
-      if (
-        contentType.includes(
-          "application/json"
-        )
-      ) {
-        try {
-          data = await response.json();
-        } catch {
-          data = null;
-        }
-      } else {
-        try {
-          rawText = await response.text();
-        } catch {
-          rawText = "";
-        }
-      }
-
-      if (!response.ok) {
-        let backendMessage =
-          data?.detail ||
-          data?.message ||
-          data?.error ||
-          rawText ||
-          "Unknown backend error.";
-
-        if (
-          typeof backendMessage !==
-          "string"
-        ) {
-          backendMessage = JSON.stringify(
-            backendMessage
-          );
-        }
-
-        throw new Error(
-          `BIS AI returned HTTP ${response.status}: ${backendMessage}`
-        );
-      }
-
-      if (!data) {
-        throw new Error(
-          "BIS AI returned an invalid response from the backend."
-        );
-      }
-
+      const data = await getChatResponse(cleanMessage);
       const assistantMessage = {
         id: requestId,
         role: "assistant",
         pending: false,
         content:
           data.answer ||
+          data.response ||
+          data.content ||
           "I could not generate an answer for that request.",
         source: data.source || null,
-        agent: data.agent || null,
+        agent: normalizeAgent(data.agent),
       };
 
       setMessages((prev) =>
         prev.map((item) =>
-          item.id === requestId
-            ? assistantMessage
-            : item
+          item.id === requestId ? assistantMessage : item
         )
       );
 
-      saveChatToHistory(
-        cleanMessage,
-        assistantMessage.content
-      );
+      saveChatToHistory(cleanMessage, assistantMessage.content);
     } catch (err) {
-      console.error(
-        "BIS Copilot request failed:",
-        err
-      );
+      console.error("BIS Copilot request failed:", err);
 
       const errorMessage =
         err?.message ||
@@ -508,29 +633,46 @@ export default function BISCopilot() {
                 pending: false,
                 error: true,
                 content:
-                  "I couldn't complete that request right now. Please try again.",
+                  "BISense could not complete this request yet. Your question has been saved. Please try again.",
               }
             : item
         )
       );
     } finally {
       setLoading(false);
+      setBackendWaking(false);
     }
   };
 
   const clearConversation = () => {
     setMessages([]);
+    setMessage("");
     setError("");
+    persistSessionConversation([], "");
   };
 
   const copyAnswer = async (content) => {
     try {
-      await navigator.clipboard.writeText(
-        content
-      );
+      await navigator.clipboard.writeText(content);
     } catch {
       // Ignore clipboard errors.
     }
+  };
+
+  const openWorkflow = (workflow) => {
+    setSelectedWorkflow(workflow);
+  };
+
+  const getAgentWorkflow = (agent) => {
+    if (!agent) return null;
+
+    const haystack = `${agent.name || ""} ${agent.workflow || ""}`.toLowerCase();
+
+    if (haystack.includes("product")) return WORKFLOWS.find((w) => w.id === "product");
+    if (haystack.includes("compliance")) return WORKFLOWS.find((w) => w.id === "compliance");
+    if (haystack.includes("certif")) return WORKFLOWS.find((w) => w.id === "certification");
+    if (haystack.includes("labor")) return WORKFLOWS.find((w) => w.id === "laboratory");
+    return WORKFLOWS.find((w) => w.id === "standard");
   };
 
   return (
@@ -558,10 +700,8 @@ export default function BISCopilot() {
           </h1>
 
           <p className="bis-copilot-subtitle bis-enter-3">
-            Ask questions in natural language and
-            move from standards information to
-            certification, testing and compliance
-            workflows.
+            Ask questions in natural language and move from standards
+            information to certification, testing and compliance workflows.
           </p>
 
           <div
@@ -574,22 +714,11 @@ export default function BISCopilot() {
             <div className="bis-composer-top">
               <textarea
                 value={message}
-                onChange={(event) =>
-                  setMessage(
-                    event.target.value
-                  )
-                }
-                onFocus={() =>
-                  setFocused(true)
-                }
-                onBlur={() =>
-                  setFocused(false)
-                }
+                onChange={(event) => setMessage(event.target.value)}
+                onFocus={() => setFocused(true)}
+                onBlur={() => setFocused(false)}
                 onKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    !event.shiftKey
-                  ) {
+                  if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
                     sendMessage();
                   }
@@ -602,10 +731,7 @@ export default function BISCopilot() {
               <button
                 type="button"
                 onClick={() => sendMessage()}
-                disabled={
-                  loading ||
-                  !message.trim()
-                }
+                disabled={loading || !message.trim()}
               >
                 {loading ? (
                   <span className="bis-send-loading">
@@ -616,47 +742,37 @@ export default function BISCopilot() {
                 ) : (
                   <>
                     Ask BIS AI
-                    <CopilotIcon
-                      type="arrow"
-                      size={15}
-                    />
+                    <CopilotIcon type="arrow" size={15} />
                   </>
                 )}
               </button>
             </div>
 
             <div className="bis-suggestion-row">
-              {suggestions.map(
-                (suggestion, index) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    onClick={() =>
-                      sendMessage(suggestion)
-                    }
-                    disabled={loading}
-                    style={{
-                      animationDelay: `${
-                        80 + index * 45
-                      }ms`,
-                    }}
-                  >
-                    {suggestion}
-                  </button>
-                )
-              )}
+              {suggestions.map((suggestion, index) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => sendMessage(suggestion)}
+                  disabled={loading}
+                  style={{ animationDelay: `${80 + index * 45}ms` }}
+                >
+                  {suggestion}
+                </button>
+              ))}
             </div>
           </div>
 
-          {error && (
-            <div
-              className="bis-copilot-error"
-              role="alert"
-            >
-              <strong>
-                We couldn't complete that request.
-              </strong>
+          {backendWaking && !loading && (
+            <div className="bis-copilot-warmup" role="status">
+              <span className="bis-warmup-dot" />
+              BISense service is warming up in the background.
+            </div>
+          )}
 
+          {error && (
+            <div className="bis-copilot-error" role="alert">
+              <strong>We couldn't complete that request.</strong>
               <span>{error}</span>
             </div>
           )}
@@ -666,10 +782,7 @@ export default function BISCopilot() {
           <section className="bis-response-section bis-response-enter">
             <div className="bis-response-header">
               <div>
-                <span className="bis-copilot-kicker">
-                  YOUR CONVERSATION
-                </span>
-
+                <span className="bis-copilot-kicker">YOUR CONVERSATION</span>
                 <h2>BISense response</h2>
               </div>
 
@@ -682,17 +795,12 @@ export default function BISCopilot() {
                   }
                 >
                   <i />
-
-                  {loading
-                    ? "Processing"
-                    : "Response ready"}
+                  {loading ? "Processing" : "Response ready"}
                 </span>
 
                 <button
                   type="button"
-                  onClick={
-                    clearConversation
-                  }
+                  onClick={clearConversation}
                   disabled={loading}
                 >
                   New conversation
@@ -701,221 +809,157 @@ export default function BISCopilot() {
             </div>
 
             <div className="bis-conversation">
-              {messages.map(
-                (item, index) => {
-                  if (
-                    item.role === "user"
-                  ) {
-                    return (
-                      <div
-                        key={`user-${index}`}
-                        className="bis-user-message bis-message-enter"
-                      >
-                        <div className="bis-user-message-meta">
-                          YOU
-                        </div>
-
-                        <div className="bis-user-bubble">
-                          {item.content}
-                        </div>
-                      </div>
-                    );
-                  }
-
+              {messages.map((item, index) => {
+                if (item.role === "user") {
                   return (
-                    <article
-                      className={`bis-ai-response bis-ai-reveal ${
-                        item.pending
-                          ? "bis-ai-response-pending"
-                          : ""
-                      } ${
-                        item.error
-                          ? "bis-ai-response-error"
-                          : ""
-                      }`}
-                      key={
-                        item.id ||
-                        `assistant-${index}`
-                      }
+                    <div
+                      key={item.id || `user-${index}`}
+                      className="bis-user-message bis-message-enter"
                     >
-                      <div className="bis-ai-response-top">
-                        <div className="bis-ai-identity">
-                          <div
-                            className={`bis-ai-mark ${
-                              item.pending
-                                ? "is-thinking"
-                                : ""
-                            }`}
-                          >
-                            <span>B</span>
-                          </div>
+                      <div className="bis-user-message-meta">YOU</div>
+                      <div className="bis-user-bubble">{item.content}</div>
+                    </div>
+                  );
+                }
 
-                          <div>
-                            <strong>
-                              BISense
-                            </strong>
-
-                            <span>
-                              {item.pending
-                                ? "Preparing response"
-                                : "Standards intelligence"}
-                            </span>
-                          </div>
+                return (
+                  <article
+                    className={`bis-ai-response bis-ai-reveal ${
+                      item.pending ? "bis-ai-response-pending" : ""
+                    } ${item.error ? "bis-ai-response-error" : ""}`}
+                    key={item.id || `assistant-${index}`}
+                  >
+                    <div className="bis-ai-response-top">
+                      <div className="bis-ai-identity">
+                        <div className={`bis-ai-mark ${item.pending ? "is-thinking" : ""}`}>
+                          <span>B</span>
                         </div>
 
-                        <span className="bis-ai-badge">
-                          {item.pending
-                            ? "RESPONDING"
-                            : "AI ASSISTED"}
-                        </span>
+                        <div>
+                          <strong>BISense</strong>
+                          <span>
+                            {item.pending
+                              ? "Preparing response"
+                              : "Standards intelligence"}
+                          </span>
+                        </div>
                       </div>
 
-                      {item.pending ? (
-                        <div className="bis-ai-pending-content">
-                          <div className="bis-pending-main">
-                            <strong>
-                              {
-                                getAiLoadingCopy(
-                                  isFirstRequest
-                                ).title
-                              }
-                            </strong>
+                      <span className="bis-ai-badge">
+                        {item.pending ? "RESPONDING" : "AI ASSISTED"}
+                      </span>
+                    </div>
 
-                            <span>
-                              {
-                                getAiLoadingCopy(
-                                  isFirstRequest
-                                ).subtitle
-                              }
-                            </span>
-
-                            <small>
-                              Please wait while BISense
-                              prepares your answer.
-                            </small>
-                          </div>
-
-                          <div
-                            className="bis-thinking-dots"
-                            aria-hidden="true"
-                          >
-                            <i />
-                            <i />
-                            <i />
-                          </div>
+                    {item.pending ? (
+                      <div className="bis-ai-pending-content">
+                        <div className="bis-pending-main">
+                          <strong>
+                            {
+                              getAiLoadingCopy(
+                                isFirstRequest,
+                                backendWaking
+                              ).title
+                            }
+                          </strong>
+                          <span>
+                            {
+                              getAiLoadingCopy(
+                                isFirstRequest,
+                                backendWaking
+                              ).subtitle
+                            }
+                          </span>
+                          <small>
+                            {
+                              getAiLoadingCopy(
+                                isFirstRequest,
+                                backendWaking
+                              ).small
+                            }
+                          </small>
                         </div>
-                      ) : (
-                        <div className="bis-ai-answer-layout">
-                          <div className="bis-ai-answer">
-                            <div className="bis-answer-title">
-                              <span>
-                                ANSWER
-                              </span>
 
+                        <div className="bis-thinking-dots" aria-hidden="true">
+                          <i />
+                          <i />
+                          <i />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bis-ai-answer-layout">
+                        <div className="bis-ai-answer">
+                          <div className="bis-answer-title">
+                            <span>ANSWER</span>
+                            <button
+                              type="button"
+                              onClick={() => copyAnswer(item.content)}
+                            >
+                              <CopilotIcon type="copy" size={14} />
+                              Copy
+                            </button>
+                          </div>
+
+                          <AnswerContent content={item.content} />
+
+                          {item.agent && (
+                            <div className="bis-inline-workflow">
+                              <div>
+                                <span className="bis-inline-workflow-kicker">
+                                  EXECUTION WORKFLOW
+                                </span>
+                                <strong>
+                                  {item.agent.name || "How BISense handled this"}
+                                </strong>
+                              </div>
                               <button
                                 type="button"
-                                onClick={() =>
-                                  copyAnswer(
-                                    item.content
-                                  )
-                                }
+                                onClick={() => {
+                                  const workflow = getAgentWorkflow(item.agent);
+                                  if (workflow) openWorkflow(workflow);
+                                }}
                               >
-                                <CopilotIcon
-                                  type="copy"
-                                  size={14}
-                                />
-
-                                Copy
+                                View how it worked
+                                <CopilotIcon type="arrow" size={13} />
                               </button>
                             </div>
+                          )}
+                        </div>
 
-                            <AnswerContent
-                              content={
-                                item.content
-                              }
-                            />
-                          </div>
-
-                          {(item.source ||
-                            item.agent) && (
-                            <aside className="bis-evidence-column">
+                        {(item.source || item.agent) && (
+                          <aside className="bis-evidence-column">
                             {item.source && (
                               <div className="bis-evidence-block bis-evidence-reveal">
                                 <div className="bis-evidence-heading">
                                   <div className="bis-evidence-icon">
-                                    <CopilotIcon
-                                      type="book"
-                                      size={15}
-                                    />
+                                    <CopilotIcon type="book" size={15} />
                                   </div>
-
                                   <div>
-                                    <span>
-                                      EVIDENCE
-                                    </span>
-
-                                    <strong>
-                                      Reference
-                                    </strong>
+                                    <span>EVIDENCE</span>
+                                    <strong>Reference</strong>
                                   </div>
                                 </div>
 
                                 <div className="bis-source-details">
-                                  <strong>
-                                    {getSourceLabel(
-                                      item.source
+                                  <strong>{getSourceLabel(item.source)}</strong>
+                                  {item.source.title &&
+                                    item.source.title !== item.source.source_name && (
+                                      <span>{item.source.title}</span>
                                     )}
-                                  </strong>
-
-                                  {item
-                                    .source
-                                    .title &&
-                                    item
-                                      .source
-                                      .title !==
-                                      item
-                                        .source
-                                        .source_name && (
-                                      <span>
-                                        {
-                                          item
-                                            .source
-                                            .title
-                                        }
-                                      </span>
-                                    )}
-
-                                  {item
-                                    .source
-                                    .standard && (
+                                  {item.source.standard && (
                                     <span className="bis-source-standard">
-                                      {
-                                        item
-                                          .source
-                                          .standard
-                                      }
+                                      {item.source.standard}
                                     </span>
                                   )}
                                 </div>
 
-                                {item
-                                  .source
-                                  .source_url && (
+                                {item.source.source_url && (
                                   <a
-                                    href={
-                                      item
-                                        .source
-                                        .source_url
-                                    }
+                                    href={item.source.source_url}
                                     target="_blank"
                                     rel="noreferrer"
                                   >
                                     View official source
-
-                                    <CopilotIcon
-                                      type="external"
-                                      size={13}
-                                    />
+                                    <CopilotIcon type="external" size={13} />
                                   </a>
                                 )}
                               </div>
@@ -925,91 +969,83 @@ export default function BISCopilot() {
                               <div className="bis-evidence-block workflow bis-evidence-reveal-delay">
                                 <div className="bis-evidence-heading">
                                   <div className="bis-evidence-icon">
-                                    <CopilotIcon
-                                      type="workflow"
-                                      size={15}
-                                    />
+                                    <CopilotIcon type="workflow" size={15} />
                                   </div>
-
                                   <div>
-                                    <span>
-                                      WORKFLOW
-                                    </span>
-
-                                    <strong>
-                                      How BISense
-                                      handled it
-                                    </strong>
+                                    <span>WORKFLOW</span>
+                                    <strong>How BISense handled it</strong>
                                   </div>
                                 </div>
 
-                                {item.agent
-                                  .name && (
+                                {item.agent.name && (
                                   <div className="bis-agent-name">
-                                    {
-                                      item.agent
-                                        .name
-                                    }
+                                    {item.agent.name}
                                   </div>
                                 )}
 
                                 <div className="bis-agent-steps">
-                                  {item.agent.steps?.map(
-                                    (
-                                      step,
-                                      stepIndex
-                                    ) => (
-                                      <div
-                                        className="bis-agent-step"
-                                        key={
-                                          stepIndex
-                                        }
-                                      >
-                                        <span>
-                                          {String(
-                                            stepIndex +
-                                              1
-                                          ).padStart(
-                                            2,
-                                            "0"
-                                          )}
-                                        </span>
-
-                                        <p>
-                                          {step}
-                                        </p>
-                                      </div>
-                                    )
-                                  )}
+                                  {item.agent.steps?.map((step, stepIndex) => (
+                                    <div
+                                      className="bis-agent-step"
+                                      key={`${item.id || index}-${stepIndex}`}
+                                    >
+                                      <span>
+                                        {String(stepIndex + 1).padStart(2, "0")}
+                                      </span>
+                                      <p>{step}</p>
+                                    </div>
+                                  ))}
                                 </div>
+
+                                <button
+                                  type="button"
+                                  className="bis-evidence-workflow-button"
+                                  onClick={() => {
+                                    const workflow = getAgentWorkflow(item.agent);
+                                    if (workflow) openWorkflow(workflow);
+                                  }}
+                                >
+                                  View complete workflow
+                                  <CopilotIcon type="arrow" size={13} />
+                                </button>
                               </div>
                             )}
                           </aside>
                         )}
-                        </div>
-                      )}
+                      </div>
+                    )}
 
-                      {!item.pending && (
-                        <div className="bis-response-trust">
-                        <CopilotIcon
-                          type="shield"
-                          size={13}
-                        />
-
+                    {!item.pending && (
+                      <div className="bis-response-trust">
+                        <CopilotIcon type="shield" size={13} />
                         <span>
-                          AI-assisted
-                          information. Verify
-                          important requirements
-                          against the latest
-                          official BIS source.
-                          </span>
-                        </div>
-                      )}
-                    </article>
-                  );
-                }
-              )}
+                          AI-assisted information. Verify important requirements against
+                          the latest official BIS source.
+                        </span>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
 
+              {loading && (
+                <div className="bis-thinking-card bis-thinking-enter">
+                  <div className="bis-thinking-mark">B</div>
+                  <div>
+                    <strong>
+                      {getAiLoadingCopy(isFirstRequest, backendWaking).title}
+                    </strong>
+                    <span>
+                      {getAiLoadingCopy(isFirstRequest, backendWaking).subtitle}
+                    </span>
+                  </div>
+                  <div className="bis-thinking-dots">
+                    <i />
+                    <i />
+                    <i />
+                  </div>
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -1017,100 +1053,137 @@ export default function BISCopilot() {
         <section className="bis-copilot-section bis-section-enter">
           <div className="bis-section-heading">
             <div>
-              <span className="bis-copilot-kicker">
-                BIS WORKFLOWS
-              </span>
-
-              <h2>
-                Go beyond the answer.
-              </h2>
+              <span className="bis-copilot-kicker">BIS WORKFLOWS</span>
+              <h2>Go beyond the answer.</h2>
             </div>
-
             <p>
-              Continue from information into the
-              workflow you actually need.
+              See what each BISense workflow does and how it turns information into
+              a practical next step.
             </p>
           </div>
 
           <div className="bis-workflow-list">
-            {workflows.map(
-              (workflow, index) => (
-                <Link
-                  key={workflow.title}
-                  to={workflow.to}
-                  className="bis-workflow-row"
-                >
-                  <span className="bis-workflow-number">
-                    {String(
-                      index + 1
-                    ).padStart(2, "0")}
-                  </span>
-
-                  <div className="bis-workflow-icon">
-                    <CopilotIcon
-                      type={workflow.icon}
-                      size={17}
-                    />
-                  </div>
-
-                  <div className="bis-workflow-copy">
-                    <strong>
-                      {workflow.title}
-                    </strong>
-
-                    <span>
-                      {
-                        workflow.description
-                      }
-                    </span>
-                  </div>
-
-                  <CopilotIcon
-                    type="arrow"
-                    size={15}
-                  />
-                </Link>
-              )
-            )}
+            {WORKFLOWS.map((workflow, index) => (
+              <button
+                key={workflow.id}
+                type="button"
+                className="bis-workflow-row bis-workflow-button"
+                onClick={() => openWorkflow(workflow)}
+              >
+                <span className="bis-workflow-number">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <div className="bis-workflow-icon">
+                  <CopilotIcon type={workflow.icon} size={17} />
+                </div>
+                <div className="bis-workflow-copy">
+                  <strong>{workflow.title}</strong>
+                  <span>{workflow.description}</span>
+                </div>
+                <CopilotIcon type="arrow" size={15} />
+              </button>
+            ))}
           </div>
         </section>
 
         <section className="bis-copilot-info bis-info-enter">
           <div className="bis-info-icon">
-            <CopilotIcon
-              type="shield"
-              size={18}
-            />
+            <CopilotIcon type="shield" size={18} />
           </div>
-
           <div>
-            <span className="bis-copilot-kicker">
-              SOURCE VISIBILITY
-            </span>
-
-            <h2>
-              AI helps explain. Official BIS
-              information remains the reference.
-            </h2>
-
+            <span className="bis-copilot-kicker">SOURCE VISIBILITY</span>
+            <h2>AI helps explain. Official BIS information remains the reference.</h2>
             <p>
-              BISense is an AI-assisted
-              information and workflow tool. It
-              does not issue certification or make
-              official BIS, legal or compliance
-              decisions.
+              BISense is an AI-assisted information and workflow tool. It does not
+              issue certification or make official BIS, legal or compliance decisions.
             </p>
           </div>
-
           <Link to="/awareness">
             Explore BIS information
-            <CopilotIcon
-              type="arrow"
-              size={14}
-            />
+            <CopilotIcon type="arrow" size={14} />
           </Link>
         </section>
       </main>
+
+      {selectedWorkflow && (
+        <div
+          className="bis-workflow-modal-backdrop"
+          role="presentation"
+          onMouseDown={() => setSelectedWorkflow(null)}
+        >
+          <div
+            className="bis-workflow-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="bis-workflow-dialog-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="bis-workflow-modal-head">
+              <div>
+                <span className="bis-workflow-modal-kicker">BISENSE WORKFLOW</span>
+                <h3 id="bis-workflow-dialog-title">{selectedWorkflow.title}</h3>
+                <p>{selectedWorkflow.description}</p>
+              </div>
+              <button
+                type="button"
+                className="bis-workflow-modal-close"
+                aria-label="Close workflow"
+                onClick={() => setSelectedWorkflow(null)}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="bis-workflow-modal-body">
+              <p className="bis-workflow-modal-summary">
+                {selectedWorkflow.summary}
+              </p>
+
+              <div className="bis-workflow-modal-section-title">
+                <span>PROCESS</span>
+                <strong>How it works</strong>
+              </div>
+
+              <div className="bis-workflow-modal-steps">
+                {selectedWorkflow.steps.map(([title, description], index) => (
+                  <div className="bis-workflow-modal-step" key={title}>
+                    <span className="bis-workflow-modal-step-number">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <div>
+                      <strong>{title}</strong>
+                      <p>{description}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="bis-workflow-modal-result">
+                <strong>What the user gets</strong>
+                <p>{selectedWorkflow.result}</p>
+              </div>
+            </div>
+
+            <div className="bis-workflow-modal-foot">
+              <button
+                type="button"
+                className="bis-workflow-modal-secondary"
+                onClick={() => setSelectedWorkflow(null)}
+              >
+                Close
+              </button>
+              <Link
+                to={selectedWorkflow.to}
+                className="bis-workflow-modal-primary"
+                onClick={() => setSelectedWorkflow(null)}
+              >
+                Open full workflow
+                <CopilotIcon type="arrow" size={13} />
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Footer />
     </div>
@@ -2647,6 +2720,302 @@ const copilotStyles = `
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: .01ms !important;
+  }
+}
+
+
+/* =========================
+   WORKFLOW MODAL
+========================= */
+
+.bis-workflow-button {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.bis-workflow-button:focus-visible {
+  outline: 2px solid #0b3d91;
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+.bis-workflow-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(15, 23, 42, .38);
+  backdrop-filter: blur(7px);
+  animation: bisModalBackdropIn .2s ease both;
+}
+
+.bis-workflow-modal {
+  width: min(760px, 100%);
+  max-height: min(760px, calc(100vh - 44px));
+  overflow: auto;
+  border: 1px solid #dce4ee;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, .20);
+  animation: bisModalIn .28s cubic-bezier(.22,.75,.25,1) both;
+}
+
+.bis-workflow-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid #eaecf0;
+  background: #fbfcfe;
+}
+
+.bis-workflow-modal-kicker {
+  display: block;
+  margin-bottom: 7px;
+  color: #98a2b3;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.bis-workflow-modal-head h3 {
+  margin: 0;
+  color: #101828;
+  font-size: 23px;
+  letter-spacing: -.025em;
+}
+
+.bis-workflow-modal-head p {
+  margin: 7px 0 0;
+  max-width: 570px;
+  color: #667085;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.bis-workflow-modal-close {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #475467;
+  font-family: inherit;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform .15s ease, background-color .15s ease;
+}
+
+.bis-workflow-modal-close:hover {
+  background: #f8fafc;
+  transform: translateY(-1px);
+}
+
+.bis-workflow-modal-body {
+  padding: 22px 24px 18px;
+}
+
+.bis-workflow-modal-summary {
+  margin: 0 0 20px;
+  color: #344054;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.bis-workflow-modal-section-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 12px;
+}
+
+.bis-workflow-modal-section-title span {
+  color: #98a2b3;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.bis-workflow-modal-section-title strong {
+  color: #101828;
+  font-size: 12px;
+}
+
+.bis-workflow-modal-steps {
+  display: grid;
+  gap: 9px;
+}
+
+.bis-workflow-modal-step {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 11px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid #e6eaf0;
+  border-radius: 10px;
+  background: #fcfdff;
+}
+
+.bis-workflow-modal-step-number {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #edf4ff;
+  color: #0b3d91;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.bis-workflow-modal-step strong {
+  display: block;
+  color: #182230;
+  font-size: 10px;
+}
+
+.bis-workflow-modal-step p {
+  margin: 4px 0 0;
+  color: #667085;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.bis-workflow-modal-result {
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid #dce6f5;
+  border-radius: 10px;
+  background: #f7faff;
+}
+
+.bis-workflow-modal-result strong {
+  display: block;
+  color: #101828;
+  font-size: 11px;
+}
+
+.bis-workflow-modal-result p {
+  margin: 5px 0 0;
+  color: #667085;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.bis-workflow-modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 15px 24px 20px;
+  border-top: 1px solid #eaecf0;
+}
+
+.bis-workflow-modal-secondary,
+.bis-workflow-modal-primary {
+  min-height: 37px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 13px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 750;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform .15s ease, background-color .15s ease;
+}
+
+.bis-workflow-modal-secondary {
+  border: 1px solid #d0d5dd;
+  background: #ffffff;
+  color: #344054;
+}
+
+.bis-workflow-modal-primary {
+  border: 1px solid #0b3d91;
+  background: #0b3d91;
+  color: #ffffff;
+}
+
+.bis-workflow-modal-secondary:hover,
+.bis-workflow-modal-primary:hover {
+  transform: translateY(-1px);
+}
+
+.bis-workflow-modal-secondary:hover {
+  background: #f9fafb;
+}
+
+.bis-workflow-modal-primary:hover {
+  background: #082f73;
+}
+
+@keyframes bisModalBackdropIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes bisModalIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 620px) {
+  .bis-workflow-modal-backdrop {
+    padding: 10px;
+  }
+
+  .bis-workflow-modal {
+    max-height: calc(100vh - 20px);
+    border-radius: 13px;
+  }
+
+  .bis-workflow-modal-head {
+    padding: 17px 16px 15px;
+  }
+
+  .bis-workflow-modal-head h3 {
+    font-size: 20px;
+  }
+
+  .bis-workflow-modal-body {
+    padding: 17px 16px 15px;
+  }
+
+  .bis-workflow-modal-foot {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    padding: 13px 16px 16px;
+  }
+
+  .bis-workflow-modal-secondary,
+  .bis-workflow-modal-primary {
+    width: 100%;
   }
 }
 `;
