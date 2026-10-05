@@ -9,9 +9,9 @@ import {
 } from "react-router-dom";
 
 import { supabase } from "./lib/supabase";
-
 import Home from "./pages/Home";
 import Login from "./pages/Login";
+import AuthCallback from "./pages/AuthCallback";
 import StandardSearch from "./pages/StandardSearch";
 import StandardDetails from "./pages/StandardDetails";
 import CompareStandards from "./pages/CompareStandards";
@@ -24,11 +24,6 @@ import Profile from "./pages/Profile";
 import Awareness from "./pages/Awareness";
 import BISCopilot from "./pages/BISCopilot";
 
-/* =========================================================
-   BISENSE — APPLICATION BOOT SCREEN
-   Used while Supabase checks the current session.
-   ========================================================= */
-
 function AppLoadingScreen({ message = "Preparing BISense" }) {
   return (
     <div className="app-boot-screen" role="status" aria-live="polite">
@@ -36,11 +31,8 @@ function AppLoadingScreen({ message = "Preparing BISense" }) {
         <div className="app-boot-mark" aria-hidden="true">
           <span className="app-boot-mark-core" />
         </div>
-
         <div className="app-boot-brand">BISense</div>
-
         <div className="app-boot-message">{message}</div>
-
         <div className="app-boot-loader" aria-hidden="true">
           <span />
           <span />
@@ -51,41 +43,38 @@ function AppLoadingScreen({ message = "Preparing BISense" }) {
   );
 }
 
-/* =========================================================
-   AUTH PROTECTION
-   Existing Supabase authentication logic is preserved.
-   ========================================================= */
-
 function ProtectedRoute() {
   const [status, setStatus] = useState("checking");
 
   useEffect(() => {
     let mounted = true;
 
-    const checkAuth = async () => {
+    const applySession = (session) => {
+      if (!mounted) return;
+      setStatus(session?.user ? "authenticated" : "unauthenticated");
+    };
+
+    const checkSession = async () => {
       try {
         const {
-          data: { user },
-        } = await supabase.auth.getUser();
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
 
-        if (!mounted) return;
-
-        setStatus(user ? "authenticated" : "unauthenticated");
+        if (error) throw error;
+        applySession(session);
       } catch (error) {
         console.error("Authentication check failed:", error);
-
-        if (mounted) {
-          setStatus("unauthenticated");
-        }
+        if (mounted) setStatus("unauthenticated");
       }
     };
 
-    checkAuth();
+    checkSession();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      checkAuth();
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      applySession(session);
     });
 
     return () => {
@@ -105,11 +94,6 @@ function ProtectedRoute() {
   return <Outlet />;
 }
 
-/* =========================================================
-   PAGE TRANSITION WRAPPER
-   Gives each route a clean mount point for subtle animation.
-   ========================================================= */
-
 function PageFrame() {
   const location = useLocation();
 
@@ -122,21 +106,15 @@ function PageFrame() {
   );
 }
 
-/* =========================================================
-   APPLICATION
-   ========================================================= */
-
 export default function App() {
   return (
     <BrowserRouter>
       <div className="app">
         <Routes>
-          {/* Public routes */}
           <Route element={<PageFrame />}>
             <Route path="/" element={<Home />} />
-
             <Route path="/login" element={<Login />} />
-
+            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/copilot" element={<BISCopilot />} />
 
             <Route
@@ -149,20 +127,14 @@ export default function App() {
               element={<Navigate to="/standards" replace />}
             />
 
-            <Route
-              path="/standards"
-              element={<StandardSearch />}
-            />
+            <Route path="/standards" element={<StandardSearch />} />
 
             <Route
               path="/standard/:standardNumber"
               element={<StandardDetails />}
             />
 
-            <Route
-              path="/compare"
-              element={<CompareStandards />}
-            />
+            <Route path="/compare" element={<CompareStandards />} />
 
             <Route
               path="/certification"
@@ -174,42 +146,19 @@ export default function App() {
               element={<ProductAnalyzer />}
             />
 
-            <Route
-              path="/compliance"
-              element={<Compliance />}
-            />
-
-            <Route
-              path="/laboratories"
-              element={<Laboratories />}
-            />
-
-            <Route
-              path="/awareness"
-              element={<Awareness />}
-            />
+            <Route path="/compliance" element={<Compliance />} />
+            <Route path="/laboratories" element={<Laboratories />} />
+            <Route path="/awareness" element={<Awareness />} />
           </Route>
 
-          {/* Protected routes */}
           <Route element={<ProtectedRoute />}>
             <Route element={<PageFrame />}>
-              <Route
-                path="/dashboard"
-                element={<Dashboard />}
-              />
-
-              <Route
-                path="/profile"
-                element={<Profile />}
-              />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/profile" element={<Profile />} />
             </Route>
           </Route>
 
-          {/* Fallback */}
-          <Route
-            path="*"
-            element={<Navigate to="/" replace />}
-          />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
     </BrowserRouter>

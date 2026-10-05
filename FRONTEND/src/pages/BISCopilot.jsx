@@ -2,11 +2,53 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
+import LanguageSelector, { getLanguageConfig, getStoredLanguage } from "../components/LanguageSelector";
 
 const CHAT_HISTORY_KEY = "bisense_recent_chats";
 const CHAT_SESSION_KEY = "bisense_copilot_session_v3";
 const FIRST_AI_REQUEST_KEY = "bisense_ai_request_started";
 const BACKEND_URL = "https://bisense-5ozn.onrender.com";
+
+const LANGUAGE_LABELS = {
+  en: "English",
+  hi: "Hindi",
+  te: "Telugu",
+  ta: "Tamil",
+};
+
+const LANGUAGE_PROMPTS = {
+  en: "Please answer in English.",
+  hi: "Please answer in Hindi (हिन्दी).",
+  te: "Please answer in Telugu (తెలుగు).",
+  ta: "Please answer in Tamil (தமிழ்).",
+};
+
+function canUseSpeechRecognition() {
+  return Boolean(
+    typeof window !== "undefined" &&
+      (window.SpeechRecognition || window.webkitSpeechRecognition)
+  );
+}
+
+function chooseSpeechVoice(langCode) {
+  if (typeof window === "undefined" || !window.speechSynthesis) {
+    return null;
+  }
+
+  const config = getLanguageConfig(langCode);
+  const voices = window.speechSynthesis.getVoices?.() || [];
+  const exact = voices.find((voice) =>
+    String(voice.lang || "").toLowerCase().startsWith(config.speech.toLowerCase())
+  );
+
+  if (exact) return exact;
+
+  const base = config.speech.split("-")[0].toLowerCase();
+  return voices.find((voice) =>
+    String(voice.lang || "").toLowerCase().startsWith(base)
+  ) || null;
+}
+
 
 function getAiLoadingCopy(isFirstRequest, backendWaking) {
   if (backendWaking) {
@@ -209,6 +251,33 @@ function CopilotIcon({ type, size = 18 }) {
         </svg>
       );
 
+    case "mic":
+      return (
+        <svg {...props}>
+          <rect x="9" y="3" width="6" height="11" rx="3" />
+          <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0" />
+          <path d="M12 17v4" />
+          <path d="M9 21h6" />
+        </svg>
+      );
+
+    case "spark":
+      return (
+        <svg {...props}>
+          <path d="M12 3 13.2 7.8 18 9l-4.8 1.2L12 15l-1.2-4.8L6 9l4.8-1.2L12 3Z" />
+          <path d="m19 14 .6 2.4L22 17l-2.4.6L19 20l-.6-2.4L16 17l2.4-.6L19 14Z" />
+        </svg>
+      );
+
+    case "globe":
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="M3.8 9h16.4M3.8 15h16.4" />
+          <path d="M12 3.5c2.1 2.3 3.2 5.1 3.2 8.5s-1.1 6.2-3.2 8.5c-2.1-2.3-3.2-5.1-3.2-8.5S9.9 5.8 12 3.5Z" />
+        </svg>
+      );
+
     default:
       return null;
   }
@@ -376,6 +445,11 @@ export default function BISCopilot() {
   const [isFirstRequest, setIsFirstRequest] = useState(false);
   const [focused, setFocused] = useState(false);
   const [selectedWorkflow, setSelectedWorkflow] = useState(null);
+  const [selectedLanguage, setSelectedLanguage] = useState(getStoredLanguage());
+  const [isListening, setIsListening] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
+  const [speakingMessageId, setSpeakingMessageId] = useState(null);
+  const recognitionRef = useRef(null);
   const warmupPromiseRef = useRef(null);
 
   const suggestions = [
@@ -396,6 +470,108 @@ export default function BISCopilot() {
       setIsFirstRequest(true);
     }
   }, [initialSession.messages, initialSession.draft]);
+
+  useEffect(() => {
+    const handleLanguageChange = (event) => {
+      setSelectedLanguage(event?.detail || getStoredLanguage());
+      setVoiceError("");
+    };
+
+    window.addEventListener("bisense-language-change", handleLanguageChange);
+
+    return () => {
+      window.removeEventListener(
+        "bisense-language-change",
+        handleLanguageChange
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      try {
+        recognitionRef.current?.stop?.();
+      } catch {
+        // Ignore speech recognition cleanup errors.
+      }
+      try {
+        window.speechSynthesis?.cancel?.();
+      } catch {
+        // Ignore speech synthesis cleanup errors.
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+
+    const refreshVoices = () => window.speechSynthesis.getVoices();
+    refreshVoices();
+    window.speechSynthesis.addEventListener?.("voiceschanged", refreshVoices);
+
+    return () => {
+      window.speechSynthesis.removeEventListener?.(
+        "voiceschanged",
+        refreshVoices
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    setVoiceError("");
+  }, [selectedLanguage]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !canUseSpeechRecognition()) return;
+
+    const Recognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    const recognition = new Recognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setVoiceError("");
+    };
+
+    recognition.onresult = (event) => {
+      let transcript = "";
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        transcript += event.results[index][0]?.transcript || "";
+      }
+      setMessage(transcript.trim());
+    };
+
+    recognition.onerror = (event) => {
+      const code = event?.error || "";
+      if (code !== "aborted") {
+        setVoiceError(
+          code === "not-allowed"
+            ? "Microphone access was blocked. Allow microphone permission and try again."
+            : "Voice input could not be started. You can continue by typing your question."
+        );
+      }
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+
+    return () => {
+      try {
+        recognition.stop();
+      } catch {
+        // Ignore cleanup errors.
+      }
+      recognitionRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     persistSessionConversation(messages, message);
@@ -486,7 +662,7 @@ export default function BISCopilot() {
     throw new Error("BIS AI returned an empty response.");
   };
 
-  const postChat = async (url, cleanMessage) => {
+  const postChat = async (url, cleanMessage, language) => {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 90000);
 
@@ -497,7 +673,10 @@ export default function BISCopilot() {
           "Content-Type": "application/json",
           Accept: "application/json, text/plain, */*",
         },
-        body: JSON.stringify({ message: cleanMessage }),
+        body: JSON.stringify({
+          message: cleanMessage,
+          language,
+        }),
         signal: controller.signal,
       });
 
@@ -517,7 +696,7 @@ export default function BISCopilot() {
     }
   };
 
-  const getChatResponse = async (cleanMessage) => {
+  const getChatResponse = async (cleanMessage, language) => {
     if (warmupPromiseRef.current) {
       try {
         await warmupPromiseRef.current;
@@ -529,14 +708,14 @@ export default function BISCopilot() {
     let lastError = null;
 
     try {
-      return await postChat("/api/chat", cleanMessage);
+      return await postChat("/api/chat", cleanMessage, LANGUAGE_LABELS[language] || "English");
     } catch (error) {
       lastError = error;
     }
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        return await postChat(`${BACKEND_URL}/api/chat`, cleanMessage);
+        return await postChat(`${BACKEND_URL}/api/chat`, cleanMessage, LANGUAGE_LABELS[language] || "English");
       } catch (error) {
         lastError = error;
 
@@ -547,6 +726,19 @@ export default function BISCopilot() {
         if (attempt < 1) {
           await new Promise((resolve) => window.setTimeout(resolve, 2500));
         }
+      }
+    }
+
+    // Older BISense deployments may validate only { message }.
+    // Retry once with a language instruction embedded in the prompt so
+    // multilingual responses still work without requiring a new client route.
+    if (language !== "en") {
+      const fallbackMessage = `${cleanMessage}\n\n${LANGUAGE_PROMPTS[language] || LANGUAGE_PROMPTS.en}`;
+
+      try {
+        return await postChat(`${BACKEND_URL}/api/chat`, fallbackMessage, undefined);
+      } catch (error) {
+        lastError = error;
       }
     }
 
@@ -595,7 +787,7 @@ export default function BISCopilot() {
     setMessage("");
 
     try {
-      const data = await getChatResponse(cleanMessage);
+      const data = await getChatResponse(cleanMessage, selectedLanguage);
       const assistantMessage = {
         id: requestId,
         role: "assistant",
@@ -644,6 +836,66 @@ export default function BISCopilot() {
     }
   };
 
+  const toggleVoiceInput = () => {
+    if (!canUseSpeechRecognition()) {
+      setVoiceError(
+        "Voice input is not supported by this browser. Please use Chrome or Edge and allow microphone access."
+      );
+      return;
+    }
+
+    if (isListening) {
+      try {
+        recognitionRef.current?.stop?.();
+      } catch {
+        // Ignore stop errors.
+      }
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const config = getLanguageConfig(selectedLanguage);
+      recognitionRef.current.lang = config.speech;
+      recognitionRef.current.start();
+    } catch (error) {
+      console.error("Voice input failed:", error);
+      setVoiceError("Voice input is already active or could not start. Try again.");
+      setIsListening(false);
+    }
+  };
+
+  const speakAnswer = (item) => {
+    const text = String(item?.content || "").trim();
+    if (!text || typeof window === "undefined" || !window.speechSynthesis) {
+      setVoiceError("Speech playback is not supported by this browser.");
+      return;
+    }
+
+    if (speakingMessageId === item.id) {
+      window.speechSynthesis.cancel();
+      setSpeakingMessageId(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    const config = getLanguageConfig(selectedLanguage);
+    utterance.lang = config.speech;
+    utterance.rate = 0.96;
+    utterance.pitch = 1;
+
+    const voice = chooseSpeechVoice(selectedLanguage);
+    if (voice) utterance.voice = voice;
+
+    utterance.onstart = () => setSpeakingMessageId(item.id);
+    utterance.onend = () => setSpeakingMessageId(null);
+    utterance.onerror = () => setSpeakingMessageId(null);
+
+    window.speechSynthesis.speak(utterance);
+  };
+
   const clearConversation = () => {
     setMessages([]);
     setMessage("");
@@ -689,19 +941,22 @@ export default function BISCopilot() {
               : "bis-copilot-hero"
           }
         >
-          <span className="bis-copilot-kicker bis-enter-1">
-            BIS INTELLIGENCE COPILOT
-          </span>
+          <div className="bis-hero-badge bis-enter-1">
+            <span className="bis-hero-badge-icon">
+              <CopilotIcon type="spark" size={14} />
+            </span>
+            <span>BIS INTELLIGENCE COPILOT</span>
+          </div>
 
           <h1 className="bis-enter-2">
             Understand Indian Standards.
             <br />
-            Act with confidence.
+            <span>Act with confidence.</span>
           </h1>
 
           <p className="bis-copilot-subtitle bis-enter-3">
-            Ask questions in natural language and move from standards
-            information to certification, testing and compliance workflows.
+            Ask questions in natural language and move from standards information
+            to certification, testing and compliance workflows.
           </p>
 
           <div
@@ -711,37 +966,73 @@ export default function BISCopilot() {
                 : "bis-copilot-composer bis-enter-4"
             }
           >
-            <div className="bis-composer-top">
-              <textarea
-                value={message}
-                onChange={(event) => setMessage(event.target.value)}
-                onFocus={() => setFocused(true)}
-                onBlur={() => setFocused(false)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    sendMessage();
-                  }
-                }}
-                placeholder="Ask about a BIS standard, product, certification or compliance requirement..."
-                rows={1}
-                disabled={loading}
-              />
+            <div className="bis-composer-toolbar">
+              <div className="bis-composer-language-group">
+                <LanguageSelector compact />
+                <span className="bis-toolbar-divider" aria-hidden="true" />
+                <span className="bis-language-label">
+                  Respond in {LANGUAGE_LABELS[selectedLanguage] || "English"}
+                </span>
+              </div>
+
+              <div className={isListening ? "bis-voice-status listening" : "bis-voice-status"}>
+                <span className="bis-voice-status-dot" />
+                <span>{isListening ? "Listening" : "Voice ready"}</span>
+              </div>
+            </div>
+
+            <div className="bis-composer-input-row">
+              <div className="bis-composer-input-wrap">
+                <span className="bis-input-leading-icon" aria-hidden="true">
+                  <CopilotIcon type="spark" size={16} />
+                </span>
+                <textarea
+                  value={message}
+                  onChange={(event) => setMessage(event.target.value)}
+                  onFocus={() => setFocused(true)}
+                  onBlur={() => setFocused(false)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      sendMessage();
+                    }
+                  }}
+                  placeholder={`Ask about a BIS standard, product, certification or compliance requirement...`}
+                  rows={1}
+                  disabled={loading}
+                  aria-label={`Ask BISense in ${LANGUAGE_LABELS[selectedLanguage] || "English"}`}
+                />
+
+                <button
+                  type="button"
+                  className={isListening ? "bis-voice-button listening" : "bis-voice-button"}
+                  onClick={toggleVoiceInput}
+                  disabled={loading}
+                  aria-label={isListening ? "Stop voice input" : "Start voice input"}
+                  title={isListening ? "Stop listening" : `Speak in ${LANGUAGE_LABELS[selectedLanguage] || "selected language"}`}
+                >
+                  <CopilotIcon type="mic" size={18} />
+                </button>
+              </div>
 
               <button
                 type="button"
+                className="bis-ask-button"
                 onClick={() => sendMessage()}
                 disabled={loading || !message.trim()}
               >
                 {loading ? (
-                  <span className="bis-send-loading">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
+                  <>
+                    <span className="bis-send-loading">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                    Processing
+                  </>
                 ) : (
                   <>
-                    Ask BIS AI
+                    <span>Ask BIS AI</span>
                     <CopilotIcon type="arrow" size={15} />
                   </>
                 )}
@@ -749,6 +1040,13 @@ export default function BISCopilot() {
             </div>
 
             <div className="bis-suggestion-row">
+              <div className="bis-try-label">
+                <span className="bis-try-icon">
+                  <CopilotIcon type="spark" size={12} />
+                </span>
+                <span>Try asking</span>
+              </div>
+
               {suggestions.map((suggestion, index) => (
                 <button
                   key={suggestion}
@@ -764,9 +1062,18 @@ export default function BISCopilot() {
           </div>
 
           {backendWaking && !loading && (
-            <div className="bis-copilot-warmup" role="status">
-              <span className="bis-warmup-dot" />
-              BISense service is warming up in the background.
+            <div className="bis-copilot-status-note warmup" role="status">
+              <span className="bis-status-pulse" />
+              BISense is connecting to the standards intelligence service in the background.
+            </div>
+          )}
+
+          {voiceError && !error && (
+            <div className="bis-copilot-status-note voice" role="status">
+              <span className="bis-status-note-icon">
+                <CopilotIcon type="mic" size={14} />
+              </span>
+              <span>{voiceError}</span>
             </div>
           )}
 
@@ -900,6 +1207,22 @@ export default function BISCopilot() {
                           </div>
 
                           <AnswerContent content={item.content} />
+
+                          {!item.pending && !item.error && (
+                            <div className="bis-ai-response-tools">
+                              <span>
+                                {LANGUAGE_LABELS[selectedLanguage] || "English"}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => speakAnswer(item)}
+                              >
+                                {speakingMessageId === item.id
+                                  ? "Stop speaking"
+                                  : "🔊 Read aloud"}
+                              </button>
+                            </div>
+                          )}
 
                           {item.agent && (
                             <div className="bis-inline-workflow">
@@ -1298,12 +1621,29 @@ const copilotStyles = `
 ========================= */
 
 .bis-copilot-hero {
+  position: relative;
   text-align: center;
-  padding: 30px 0 32px;
+  padding: 28px 0 36px;
+}
+
+.bis-copilot-hero::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: -90px;
+  left: 50%;
+  width: min(860px, 85vw);
+  height: 410px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(33, 101, 218, .10), transparent 58%),
+    radial-gradient(circle at 76% 46%, rgba(97, 147, 231, .07), transparent 50%);
+  filter: blur(2px);
 }
 
 .bis-copilot-hero.compact {
-  padding-bottom: 20px;
+  padding-bottom: 22px;
 }
 
 .bis-copilot-kicker {
@@ -1316,21 +1656,52 @@ const copilotStyles = `
   font-weight: 800;
 }
 
+.bis-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 31px;
+  padding: 0 12px 0 7px;
+  border: 1px solid #d7e5fa;
+  border-radius: 999px;
+  background: rgba(239, 246, 255, .86);
+  color: #1856a8;
+  box-shadow: 0 7px 20px rgba(26, 80, 156, .06);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .13em;
+}
+
+.bis-hero-badge-icon {
+  width: 23px;
+  height: 23px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #2169da;
+  box-shadow: 0 3px 10px rgba(31, 88, 167, .08);
+}
+
 .bis-copilot-hero h1 {
-  margin: 0;
+  margin: 18px 0 0;
   color: #101828;
-  font-size: clamp(38px, 5.4vw, 60px);
-  line-height: 1.01;
-  letter-spacing: -.05em;
-  font-weight: 780;
+  font-size: clamp(40px, 5.5vw, 64px);
+  line-height: .99;
+  letter-spacing: -.055em;
+  font-weight: 800;
+}
+
+.bis-copilot-hero h1 span {
+  color: #246fe0;
 }
 
 .bis-copilot-subtitle {
-  max-width: 690px;
+  max-width: 720px;
   margin: 18px auto 0;
-  color: #667085;
+  color: #687892;
   font-size: 14px;
-  line-height: 1.7;
+  line-height: 1.68;
 }
 
 /* =========================
@@ -1338,14 +1709,17 @@ const copilotStyles = `
 ========================= */
 
 .bis-copilot-composer {
-  width: min(800px, 100%);
+  position: relative;
+  width: min(940px, 100%);
   margin: 30px auto 0;
-  padding: 8px;
-  border: 1px solid #d9dee7;
-  border-radius: 12px;
-  background: #ffffff;
+  padding: 14px;
+  border: 1px solid #d8e1ec;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .94);
   box-shadow:
-    0 8px 24px rgba(16,24,40,.05);
+    0 18px 45px rgba(26, 48, 82, .07),
+    0 3px 10px rgba(26, 48, 82, .04);
+  backdrop-filter: blur(10px);
   text-align: left;
   transition:
     border-color .2s ease,
@@ -1354,79 +1728,250 @@ const copilotStyles = `
 }
 
 .bis-copilot-composer.focused {
-  border-color: #a7bde2;
+  border-color: #a9c4eb;
   box-shadow:
-    0 0 0 3px rgba(11,61,145,.07),
-    0 10px 26px rgba(16,24,40,.07);
+    0 0 0 4px rgba(37, 111, 224, .08),
+    0 20px 50px rgba(26, 48, 82, .09);
   transform: translateY(-1px);
 }
 
-.bis-composer-top {
+.bis-composer-toolbar {
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 2px 3px 12px;
 }
 
+.bis-composer-language-group {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bis-toolbar-divider {
+  width: 1px;
+  height: 17px;
+  background: #e3e9f0;
+}
+
+.bis-language-label {
+  color: #667085;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.bisense-language-control {
+  min-width: 116px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid #d8e1ec;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #19345f;
+  box-sizing: border-box;
+  box-shadow: 0 2px 5px rgba(25, 52, 95, .03);
+}
+
+.bisense-language-control.compact {
+  min-width: 116px;
+}
+
+.bisense-language-control > span {
+  width: 16px;
+  flex: 0 0 16px;
+  display: grid;
+  place-items: center;
+  color: #2169da;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.bisense-language-control select {
+  width: auto;
+  min-width: 0;
+  max-width: 120px;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  color: #19345f;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.bis-voice-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 29px;
+  padding: 0 10px;
+  border: 1px solid #dcefe5;
+  border-radius: 999px;
+  background: #f5fbf8;
+  color: #2b7a56;
+  font-size: 9px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.bis-voice-status-dot,
+.bis-status-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #25a66a;
+}
+
+.bis-voice-status.listening {
+  border-color: #c9def8;
+  background: #f2f7ff;
+  color: #1e5fbf;
+}
+
+.bis-voice-status.listening .bis-voice-status-dot {
+  background: #246fe0;
+  box-shadow: 0 0 0 4px rgba(36, 111, 224, .10);
+  animation: bisStatusPulse 1.2s ease-in-out infinite;
+}
+
+.bis-composer-input-row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.bis-composer-input-wrap {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  border: 1px solid #dce5ef;
+  border-radius: 13px;
+  background: #ffffff;
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+
+.bis-composer-input-wrap:focus-within {
+  border-color: #9ebde8;
+  box-shadow: 0 0 0 3px rgba(37, 111, 224, .06);
+}
+
+.bis-input-leading-icon {
+  width: 40px;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  color: #4e83d5;
+}
+
+.bis-composer-top {
+  display: contents;
+}
+
+.bis-composer-input-wrap textarea,
 .bis-composer-top textarea {
   width: 100%;
   min-width: 0;
-  min-height: 56px;
+  min-height: 58px;
   max-height: 145px;
   resize: vertical;
-  padding: 16px 14px 11px;
+  padding: 15px 10px 14px 0;
   border: 0;
   outline: 0;
   background: transparent;
   color: #101828;
   font-family: inherit;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
-.bis-composer-top textarea::placeholder {
-  color: #98a2b3;
+.bis-composer-input-wrap textarea::placeholder {
+  color: #8b9bb2;
 }
 
-.bis-composer-top textarea:disabled {
+.bis-composer-input-wrap textarea:disabled {
   opacity: .65;
 }
 
-.bis-composer-top button {
-  min-width: 118px;
-  min-height: 43px;
+.bis-voice-button {
+  width: 38px;
+  height: 38px;
+  margin: 0 8px 0 5px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 38px;
+  border: 1px solid #dce6f2;
+  border-radius: 11px;
+  background: #f5f9ff;
+  color: #2169da;
+  cursor: pointer;
+  transition: background .16s ease, border-color .16s ease, transform .16s ease;
+}
+
+.bis-voice-button:hover:not(:disabled) {
+  background: #edf5ff;
+  border-color: #c8dcf5;
+  transform: translateY(-1px);
+}
+
+.bis-voice-button.listening {
+  border-color: #9ec4f1;
+  background: #eaf4ff;
+  color: #185fb9;
+  box-shadow: 0 0 0 4px rgba(36, 111, 224, .08);
+}
+
+.bis-voice-button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.bis-ask-button {
+  min-width: 142px;
+  min-height: 58px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  flex-shrink: 0;
-  border: 1px solid #0b3d91;
-  border-radius: 8px;
-  background: #0b3d91;
+  gap: 9px;
+  flex: 0 0 auto;
+  padding: 0 18px;
+  border: 1px solid #1554ad;
+  border-radius: 13px;
+  background: linear-gradient(180deg, #2169da, #1755b5);
   color: #ffffff;
   font-family: inherit;
   font-size: 11px;
-  font-weight: 750;
+  font-weight: 800;
   cursor: pointer;
-  transition:
-    background-color .16s ease,
-    transform .16s ease,
-    box-shadow .16s ease;
+  box-shadow: 0 8px 18px rgba(22, 87, 183, .18);
+  transition: transform .16s ease, box-shadow .16s ease, filter .16s ease;
 }
 
-.bis-composer-top button:hover:not(:disabled) {
-  background: #082f73;
+.bis-ask-button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow:
-    0 4px 12px rgba(11,61,145,.18);
+  box-shadow: 0 11px 23px rgba(22, 87, 183, .23);
+  filter: brightness(1.02);
 }
 
-.bis-composer-top button:active:not(:disabled) {
+.bis-ask-button:active:not(:disabled) {
   transform: translateY(0);
 }
 
-.bis-composer-top button:disabled {
-  opacity: .5;
+.bis-ask-button:disabled {
+  opacity: .48;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .bis-send-loading {
@@ -1440,11 +1985,7 @@ const copilotStyles = `
   height: 4px;
   border-radius: 50%;
   background: currentColor;
-  animation:
-    bisCopilotDot
-    1s
-    ease-in-out
-    infinite;
+  animation: bisCopilotDot 1s ease-in-out infinite;
 }
 
 .bis-send-loading i:nth-child(2),
@@ -1458,55 +1999,57 @@ const copilotStyles = `
 }
 
 @keyframes bisCopilotDot {
-  0%,100% {
-    opacity: .25;
-    transform: translateY(0);
-  }
-
-  50% {
-    opacity: 1;
-    transform: translateY(-2px);
-  }
+  0%,100% { opacity: .25; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-2px); }
 }
 
 .bis-suggestion-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 11px;
+  padding: 11px 3px 1px;
+  border-top: 1px solid #eef2f6;
+}
+
+.bis-try-label {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
-  padding: 7px 6px 3px;
-  border-top: 1px solid #f0f2f5;
+  margin-right: 2px;
+  color: #5b6f8a;
+  font-size: 10px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.bis-try-icon {
+  display: inline-grid;
+  place-items: center;
+  color: #2169da;
 }
 
 .bis-suggestion-row button {
-  min-height: 30px;
-  padding: 0 9px;
-  border: 1px solid #e4e7ec;
-  border-radius: 6px;
-  background: #f9fafb;
-  color: #475467;
+  min-height: 31px;
+  padding: 0 11px;
+  border: 1px solid #dfe8f3;
+  border-radius: 999px;
+  background: #f7faff;
+  color: #365273;
   font-family: inherit;
   font-size: 9px;
+  font-weight: 650;
   cursor: pointer;
-
   opacity: 0;
-  animation:
-    bisSuggestionIn
-    .45s
-    cubic-bezier(.22,.75,.25,1)
-    forwards;
-
-  transition:
-    background-color .15s ease,
-    border-color .15s ease,
-    color .15s ease,
-    transform .15s ease;
+  animation: bisSuggestionIn .45s cubic-bezier(.22,.75,.25,1) forwards;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease;
 }
 
 .bis-suggestion-row button:hover:not(:disabled) {
-  background: #ffffff;
-  border-color: #cbd5e1;
-  color: #344054;
+  background: #eef5ff;
+  border-color: #c9dbf2;
+  color: #1b5bab;
   transform: translateY(-1px);
 }
 
@@ -1515,44 +2058,70 @@ const copilotStyles = `
 }
 
 @keyframes bisSuggestionIn {
-  from {
-    opacity: 0;
-    transform: translateY(5px);
-  }
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.bis-copilot-status-note {
+  width: min(940px, 100%);
+  margin: 11px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.bis-copilot-status-note.warmup {
+  color: #536b89;
+  background: #f4f8fd;
+  border: 1px solid #e0e9f4;
+}
+
+.bis-copilot-status-note.voice {
+  color: #185fae;
+  background: #f1f7ff;
+  border: 1px solid #d6e5f7;
+}
+
+.bis-status-pulse {
+  box-shadow: 0 0 0 4px rgba(37, 166, 106, .08);
+  animation: bisStatusPulse 1.3s ease-in-out infinite;
+}
+
+.bis-status-note-icon {
+  width: 23px;
+  height: 23px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: #e6f1ff;
+  color: #2169da;
 }
 
 .bis-copilot-error {
-  width: min(800px, 100%);
-  margin: 12px auto 0;
+  width: min(940px, 100%);
+  margin: 11px auto 0;
   padding: 11px 13px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 5px;
-  border: 1px solid #fecdca;
-  border-radius: 8px;
+  gap: 5px 8px;
+  border: 1px solid #f3c7c2;
+  border-radius: 10px;
   background: #fff7f6;
   color: #b42318;
-  font-size: 11px;
+  font-size: 10px;
   animation: bisErrorIn .35s ease both;
 }
 
 @keyframes bisErrorIn {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* =========================
@@ -2599,37 +3168,6 @@ const copilotStyles = `
 }
 
 @media (max-width: 620px) {
-  .bis-copilot-main {
-    width: calc(100% - 18px);
-    padding-top: 25px;
-  }
-
-  .bis-copilot-hero h1 {
-    font-size: 34px;
-  }
-
-  .bis-copilot-subtitle {
-    font-size: 12px;
-  }
-
-  .bis-composer-top {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .bis-composer-top button {
-    width: 100%;
-  }
-
-  .bis-suggestion-row {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .bis-suggestion-row button {
-    width: 100%;
-  }
-
   .bis-response-header {
     align-items: flex-start;
     flex-direction: column;
@@ -2682,10 +3220,6 @@ const copilotStyles = `
 }
 
 @media (max-width: 430px) {
-  .bis-copilot-hero h1 {
-    font-size: 30px;
-  }
-
   .bis-ai-badge {
     display: none;
   }
@@ -2705,6 +3239,96 @@ const copilotStyles = `
 
   .bis-copilot-info > a {
     grid-column: 1;
+  }
+}
+
+@media (max-width: 620px) {
+  .bis-copilot-main {
+    width: calc(100% - 18px);
+    padding-top: 22px;
+  }
+
+  .bis-copilot-hero {
+    padding-top: 20px;
+  }
+
+  .bis-copilot-hero h1 {
+    font-size: 35px;
+    line-height: 1.02;
+  }
+
+  .bis-copilot-subtitle {
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .bis-copilot-composer {
+    margin-top: 24px;
+    padding: 11px;
+    border-radius: 15px;
+  }
+
+  .bis-composer-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  .bis-composer-language-group {
+    width: 100%;
+  }
+
+  .bis-language-label {
+    font-size: 9px;
+  }
+
+  .bis-voice-status {
+    align-self: flex-start;
+  }
+
+  .bis-composer-input-row {
+    flex-direction: column;
+  }
+
+  .bis-ask-button {
+    width: 100%;
+    min-height: 50px;
+  }
+
+  .bis-suggestion-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .bis-try-label {
+    margin-bottom: 1px;
+  }
+
+  .bis-suggestion-row button {
+    width: 100%;
+  }
+
+  .bis-copilot-status-note {
+    text-align: left;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 430px) {
+  .bis-hero-badge {
+    font-size: 8px;
+  }
+
+  .bis-copilot-hero h1 {
+    font-size: 31px;
+  }
+
+  .bis-composer-language-group {
+    flex-wrap: wrap;
+  }
+
+  .bis-toolbar-divider {
+    display: none;
   }
 }
 

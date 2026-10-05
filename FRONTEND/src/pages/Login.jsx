@@ -9,10 +9,8 @@ export default function Login() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
   const [loading, setLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
-
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -25,27 +23,15 @@ export default function Login() {
       try {
         const {
           data: { session },
-          error: sessionError,
         } = await supabase.auth.getSession();
 
-        if (sessionError) {
-          console.error(
-            "Unable to check session:",
-            sessionError
-          );
-        }
-
         if (mounted && session?.user) {
-          navigate("/dashboard", {
-            replace: true,
-          });
+          navigate("/dashboard", { replace: true });
         }
       } catch (err) {
         console.error("Session check failed:", err);
       } finally {
-        if (mounted) {
-          setCheckingSession(false);
-        }
+        if (mounted) setCheckingSession(false);
       }
     };
 
@@ -55,6 +41,32 @@ export default function Login() {
       mounted = false;
     };
   }, [navigate]);
+
+  const handleGoogleSignIn = async () => {
+    if (loading) return;
+
+    setError("");
+    setMessage("");
+    setLoading(true);
+
+    try {
+      const { error: googleError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      if (googleError) throw googleError;
+    } catch (err) {
+      console.error("Google authentication error:", err);
+      setError(
+        err?.message ||
+          "Google sign-in failed. Please try again."
+      );
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -70,9 +82,7 @@ export default function Login() {
       const cleanName = name.trim();
 
       if (!cleanEmail || !password) {
-        throw new Error(
-          "Please enter your email and password."
-        );
+        throw new Error("Please enter your email and password.");
       }
 
       if (isSignup && !cleanName) {
@@ -80,58 +90,46 @@ export default function Login() {
       }
 
       if (password.length < 6) {
-        throw new Error(
-          "Password must be at least 6 characters."
-        );
+        throw new Error("Password must be at least 6 characters.");
       }
 
       if (isSignup) {
-        const {
-          data,
-          error: signupError,
-        } = await supabase.auth.signUp({
-          email: cleanEmail,
-          password,
-          options: {
-            data: {
-              name: cleanName,
-              role: "Consumer",
-              organization: "",
-              product: "",
-              location: "",
+        const { data, error: signupError } =
+          await supabase.auth.signUp({
+            email: cleanEmail,
+            password,
+            options: {
+              emailRedirectTo: `${window.location.origin}/auth/callback`,
+              data: {
+                name: cleanName,
+                role: "Consumer",
+                organization: "",
+                product: "",
+                location: "",
+              },
             },
-          },
-        });
+          });
 
-        if (signupError) {
-          throw signupError;
-        }
+        if (signupError) throw signupError;
 
         if (data?.session?.user) {
-          navigate("/dashboard", {
-            replace: true,
-          });
+          navigate("/dashboard", { replace: true });
           return;
         }
 
         setMessage(
-          "Account created. Check your email to confirm your account, then log in."
+          "Account created. Check your email to verify your account, then return here and sign in."
         );
-
         setMode("login");
         setPassword("");
       } else {
-        const {
-          data,
-          error: loginError,
-        } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password,
-        });
+        const { data, error: loginError } =
+          await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password,
+          });
 
-        if (loginError) {
-          throw loginError;
-        }
+        if (loginError) throw loginError;
 
         if (!data?.user) {
           throw new Error(
@@ -139,13 +137,10 @@ export default function Login() {
           );
         }
 
-        navigate("/dashboard", {
-          replace: true,
-        });
+        navigate("/dashboard", { replace: true });
       }
     } catch (err) {
       console.error("Authentication error:", err);
-
       setError(
         err?.message ||
           "Authentication failed. Please try again."
@@ -161,7 +156,6 @@ export default function Login() {
     setMode((current) =>
       current === "login" ? "signup" : "login"
     );
-
     setError("");
     setMessage("");
     setPassword("");
@@ -171,19 +165,11 @@ export default function Login() {
     return (
       <div className="bis-auth-page">
         <style>{authStyles}</style>
-
         <div className="bis-auth-loading">
-          <div className="bis-auth-loading-mark">
-            B
-          </div>
-
+          <div className="bis-auth-loading-mark">B</div>
           <strong>Checking your BISense session</strong>
-
-          <span>
-            Preparing secure access...
-          </span>
-
-          <div className="bis-auth-dots">
+          <span>Preparing secure access...</span>
+          <div className="bis-auth-dots" aria-hidden="true">
             <i />
             <i />
             <i />
@@ -204,10 +190,7 @@ export default function Login() {
           </div>
 
           <div className="bis-auth-intro-content">
-            <span className="bis-auth-kicker">
-              STANDARDS INTELLIGENCE
-            </span>
-
+            <span className="bis-auth-kicker">STANDARDS INTELLIGENCE</span>
             <h1>
               Discover.
               <br />
@@ -215,11 +198,9 @@ export default function Login() {
               <br />
               Comply.
             </h1>
-
             <p>
-              One place to explore Indian Standards,
-              understand requirements and navigate the
-              BIS journey with source-backed guidance.
+              One place to explore Indian Standards, understand requirements
+              and navigate the BIS journey with source-backed guidance.
             </p>
 
             <div className="bis-auth-points">
@@ -227,12 +208,10 @@ export default function Login() {
                 <b>01</b>
                 <span>Standards discovery</span>
               </div>
-
               <div>
                 <b>02</b>
                 <span>Guided understanding</span>
               </div>
-
               <div>
                 <b>03</b>
                 <span>Compliance workflows</span>
@@ -241,7 +220,7 @@ export default function Login() {
           </div>
 
           <div className="bis-auth-intro-footer">
-            Built for consumers & industry
+            Built for consumers &amp; industry
             <span />
             BISense
           </div>
@@ -254,9 +233,7 @@ export default function Login() {
             </div>
 
             <span className="bis-auth-form-kicker">
-              {isSignup
-                ? "CREATE YOUR ACCOUNT"
-                : "SECURE ACCESS"}
+              {isSignup ? "CREATE YOUR ACCOUNT" : "SECURE ACCESS"}
             </span>
 
             <h2>
@@ -271,23 +248,15 @@ export default function Login() {
                 : "Continue your standards and compliance journey."}
             </p>
 
-            <form
-              className="bis-auth-form"
-              onSubmit={handleSubmit}
-            >
+            <form className="bis-auth-form" onSubmit={handleSubmit}>
               {isSignup && (
                 <div className="bis-field">
-                  <label htmlFor="login-name">
-                    Full name
-                  </label>
-
+                  <label htmlFor="login-name">Full name</label>
                   <input
                     id="login-name"
                     type="text"
                     value={name}
-                    onChange={(e) =>
-                      setName(e.target.value)
-                    }
+                    onChange={(e) => setName(e.target.value)}
                     placeholder="Enter your full name"
                     autoComplete="name"
                     disabled={loading}
@@ -296,17 +265,12 @@ export default function Login() {
               )}
 
               <div className="bis-field">
-                <label htmlFor="login-email">
-                  Email address
-                </label>
-
+                <label htmlFor="login-email">Email address</label>
                 <input
                   id="login-email"
                   type="email"
                   value={email}
-                  onChange={(e) =>
-                    setEmail(e.target.value)
-                  }
+                  onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
                   autoComplete="email"
                   inputMode="email"
@@ -316,44 +280,30 @@ export default function Login() {
 
               <div className="bis-field">
                 <div className="bis-password-label">
-                  <label htmlFor="login-password">
-                    Password
-                  </label>
-
+                  <label htmlFor="login-password">Password</label>
                   <span>Minimum 6 characters</span>
                 </div>
-
                 <input
                   id="login-password"
                   type="password"
                   value={password}
-                  onChange={(e) =>
-                    setPassword(e.target.value)
-                  }
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
                   autoComplete={
-                    isSignup
-                      ? "new-password"
-                      : "current-password"
+                    isSignup ? "new-password" : "current-password"
                   }
                   disabled={loading}
                 />
               </div>
 
               {error && (
-                <div
-                  className="bis-auth-message error"
-                  role="alert"
-                >
+                <div className="bis-auth-message error" role="alert">
                   {error}
                 </div>
               )}
 
               {message && (
-                <div
-                  className="bis-auth-message success"
-                  role="status"
-                >
+                <div className="bis-auth-message success" role="status">
                   {message}
                 </div>
               )}
@@ -371,38 +321,49 @@ export default function Login() {
               </button>
             </form>
 
+            {!isSignup && (
+              <>
+                <div className="bis-auth-divider" aria-hidden="true">
+                  <span>OR</span>
+                </div>
+
+                <button
+                  type="button"
+                  className="bis-google-submit"
+                  onClick={handleGoogleSignIn}
+                  disabled={loading}
+                >
+                  <span className="bis-google-icon" aria-hidden="true">
+                    G
+                  </span>
+                  <span>Continue with Google</span>
+                </button>
+              </>
+            )}
+
             <div className="bis-auth-switch">
               <span>
                 {isSignup
                   ? "Already have an account?"
                   : "New to BISense?"}
               </span>
-
               <button
                 type="button"
                 onClick={switchMode}
                 disabled={loading}
               >
-                {isSignup
-                  ? "Sign in"
-                  : "Create an account"}
+                {isSignup ? "Sign in" : "Create an account"}
               </button>
             </div>
 
             <div className="bis-auth-bottom-links">
-              <Link to="/copilot">
-                Explore BIS AI →
-              </Link>
-
-              <Link to="/">
-                Back to home
-              </Link>
+              <Link to="/copilot">Explore BIS AI →</Link>
+              <Link to="/">Back to home</Link>
             </div>
 
             <div className="bis-auth-note">
-              BISense is an AI-assisted information tool.
-              Verify important requirements with official
-              BIS sources.
+              BISense is an AI-assisted information tool. Verify important
+              requirements with official BIS sources.
             </div>
           </div>
         </section>
@@ -424,18 +385,13 @@ const authStyles = `
   width: min(1160px, calc(100% - 40px));
   min-height: 680px;
   margin: 32px auto;
-
   display: grid;
   grid-template-columns: 1fr 0.86fr;
-
   background: #ffffff;
   border: 1px solid #dfe4ec;
   border-radius: 16px;
   overflow: hidden;
-
-  box-shadow:
-    0 18px 45px rgba(16, 24, 40, 0.08),
-    0 3px 10px rgba(16, 24, 40, 0.03);
+  box-shadow: 0 18px 45px rgba(16, 24, 40, 0.08), 0 3px 10px rgba(16, 24, 40, 0.03);
 }
 
 .bis-auth-intro {
@@ -443,9 +399,7 @@ const authStyles = `
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-
   padding: 52px 56px;
-
   background: #0d1f3d;
   color: #ffffff;
   overflow: hidden;
@@ -477,7 +431,6 @@ const authStyles = `
 .bis-auth-mobile-brand {
   position: relative;
   z-index: 2;
-
   color: #ffffff;
   font-size: 24px;
   line-height: 1;
@@ -500,22 +453,18 @@ const authStyles = `
 .bis-auth-form-kicker {
   display: block;
   margin-bottom: 15px;
-
   font-size: 10px;
   font-weight: 800;
   letter-spacing: .13em;
   text-transform: uppercase;
 }
 
-.bis-auth-kicker {
-  color: rgba(255,255,255,.62);
-}
+.bis-auth-kicker { color: rgba(255,255,255,.62); }
+.bis-auth-form-kicker { color: #667085; }
 
 .bis-auth-intro h1 {
   margin: 0;
-
   color: #ffffff;
-
   font-size: clamp(48px, 5vw, 68px);
   line-height: .99;
   letter-spacing: -.055em;
@@ -525,9 +474,7 @@ const authStyles = `
 .bis-auth-intro-content > p {
   max-width: 500px;
   margin: 23px 0 0;
-
   color: rgba(255,255,255,.76);
-
   font-size: 14px;
   line-height: 1.75;
 }
@@ -560,11 +507,9 @@ const authStyles = `
 .bis-auth-intro-footer {
   position: relative;
   z-index: 2;
-
   display: flex;
   align-items: center;
   gap: 10px;
-
   color: rgba(255,255,255,.5);
   font-size: 10px;
 }
@@ -580,7 +525,6 @@ const authStyles = `
   display: flex;
   align-items: center;
   justify-content: center;
-
   padding: 48px;
   background: #ffffff;
 }
@@ -596,15 +540,9 @@ const authStyles = `
   margin-bottom: 35px;
 }
 
-.bis-auth-form-kicker {
-  color: #667085;
-}
-
 .bis-auth-card h2 {
   margin: 0;
-
   color: #101828;
-
   font-size: 34px;
   line-height: 1.08;
   letter-spacing: -.04em;
@@ -614,9 +552,7 @@ const authStyles = `
 .bis-auth-subtitle {
   max-width: 380px;
   margin: 10px 0 0;
-
   color: #667085;
-
   font-size: 13px;
   line-height: 1.65;
 }
@@ -644,36 +580,25 @@ const authStyles = `
 .bis-field input {
   width: 100%;
   height: 47px;
-
+  box-sizing: border-box;
   padding: 0 13px;
-
   border: 1px solid #d0d5dd;
   border-radius: 8px;
-
   background: #ffffff;
-
   color: #101828;
   font-size: 13px;
-
   outline: none;
-
-  transition:
-    border-color 150ms ease,
-    box-shadow 150ms ease;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
-.bis-field input::placeholder {
-  color: #98a2b3;
-}
+.bis-field input::placeholder { color: #98a2b3; }
 
 .bis-field input:focus {
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgba(37,99,235,.1);
 }
 
-.bis-field input:disabled {
-  background: #f9fafb;
-}
+.bis-field input:disabled { background: #f9fafb; }
 
 .bis-password-label {
   display: flex;
@@ -705,26 +630,22 @@ const authStyles = `
   color: #067647;
 }
 
-.bis-auth-submit {
+.bis-auth-submit,
+.bis-google-submit {
   width: 100%;
   min-height: 47px;
-
-  margin-top: 2px;
-
-  border: 1px solid #2563eb;
   border-radius: 8px;
-
-  background: #2563eb;
-  color: #ffffff;
-
   font-size: 13px;
   font-weight: 750;
-
   cursor: pointer;
+}
 
-  transition:
-    background-color 150ms ease,
-    transform 150ms ease;
+.bis-auth-submit {
+  margin-top: 2px;
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+  transition: background-color 150ms ease, transform 150ms ease;
 }
 
 .bis-auth-submit:hover:not(:disabled) {
@@ -732,9 +653,63 @@ const authStyles = `
   transform: translateY(-1px);
 }
 
-.bis-auth-submit:disabled {
+.bis-auth-submit:disabled,
+.bis-google-submit:disabled {
   opacity: .7;
   cursor: wait;
+}
+
+.bis-auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 17px;
+}
+
+.bis-auth-divider::before,
+.bis-auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #eaecf0;
+}
+
+.bis-auth-divider span {
+  color: #98a2b3;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.bis-google-submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 12px;
+  border: 1px solid #d0d5dd;
+  background: #ffffff;
+  color: #344054;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.bis-google-submit:hover:not(:disabled) {
+  background: #f9fafb;
+  border-color: #b8c0cc;
+  transform: translateY(-1px);
+}
+
+.bis-google-icon {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d0d5dd;
+  border-radius: 50%;
+  color: #4285f4;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .bis-auth-switch {
@@ -742,9 +717,7 @@ const authStyles = `
   align-items: center;
   justify-content: center;
   gap: 5px;
-
   margin-top: 20px;
-
   color: #667085;
   font-size: 11px;
 }
@@ -753,11 +726,9 @@ const authStyles = `
   padding: 0;
   border: 0;
   background: transparent;
-
   color: #2563eb;
   font-size: inherit;
   font-weight: 750;
-
   cursor: pointer;
 }
 
@@ -765,7 +736,6 @@ const authStyles = `
   display: flex;
   justify-content: space-between;
   gap: 15px;
-
   margin-top: 19px;
 }
 
@@ -776,16 +746,12 @@ const authStyles = `
   text-decoration: none;
 }
 
-.bis-auth-bottom-links a:first-child {
-  color: #2563eb;
-}
+.bis-auth-bottom-links a:first-child { color: #2563eb; }
 
 .bis-auth-note {
   margin-top: 23px;
   padding-top: 16px;
-
   border-top: 1px solid #eaecf0;
-
   color: #98a2b3;
   font-size: 9px;
   line-height: 1.6;
@@ -793,43 +759,29 @@ const authStyles = `
 
 .bis-auth-loading {
   min-height: 100vh;
-
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 7px;
-
   text-align: center;
 }
 
 .bis-auth-loading-mark {
   width: 50px;
   height: 50px;
-
   display: grid;
   place-items: center;
-
   margin-bottom: 7px;
-
   border-radius: 12px;
-
   background: #0b3d91;
   color: #ffffff;
-
   font-size: 20px;
   font-weight: 800;
 }
 
-.bis-auth-loading strong {
-  color: #101828;
-  font-size: 13px;
-}
-
-.bis-auth-loading > span {
-  color: #667085;
-  font-size: 11px;
-}
+.bis-auth-loading strong { color: #101828; font-size: 13px; }
+.bis-auth-loading > span { color: #667085; font-size: 11px; }
 
 .bis-auth-dots {
   display: flex;
@@ -840,31 +792,17 @@ const authStyles = `
 .bis-auth-dots i {
   width: 4px;
   height: 4px;
-
   border-radius: 50%;
   background: #2563eb;
-
   animation: bisAuthDot 1.1s ease-in-out infinite;
 }
 
-.bis-auth-dots i:nth-child(2) {
-  animation-delay: .15s;
-}
-
-.bis-auth-dots i:nth-child(3) {
-  animation-delay: .3s;
-}
+.bis-auth-dots i:nth-child(2) { animation-delay: .15s; }
+.bis-auth-dots i:nth-child(3) { animation-delay: .3s; }
 
 @keyframes bisAuthDot {
-  0%,100% {
-    opacity: .25;
-    transform: translateY(0);
-  }
-
-  50% {
-    opacity: 1;
-    transform: translateY(-2px);
-  }
+  0%,100% { opacity: .25; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-2px); }
 }
 
 @media (max-width: 850px) {
@@ -873,13 +811,9 @@ const authStyles = `
     grid-template-columns: 1fr;
   }
 
-  .bis-auth-intro {
-    display: none;
-  }
+  .bis-auth-intro { display: none; }
 
-  .bis-auth-form-side {
-    min-height: 650px;
-  }
+  .bis-auth-form-side { min-height: 650px; }
 
   .bis-auth-mobile-brand {
     display: block;
@@ -898,13 +832,8 @@ const authStyles = `
     min-height: calc(100vh - 18px);
   }
 
-  .bis-auth-card h2 {
-    font-size: 29px;
-  }
-
-  .bis-auth-subtitle {
-    font-size: 12px;
-  }
+  .bis-auth-card h2 { font-size: 29px; }
+  .bis-auth-subtitle { font-size: 12px; }
 
   .bis-auth-bottom-links {
     flex-direction: column;
