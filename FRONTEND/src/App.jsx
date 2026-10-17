@@ -31,8 +31,8 @@ const BACKEND_ORIGIN = (
 
 // One initial readiness gate per full page load. This keeps the app from
 // opening into a page whose first backend request is still waking Render.
-const TOTAL_WAIT_LIMIT_MS = 100_000;
-const REQUEST_TIMEOUT_MS = 22_000;
+const SPLASH_DURATION_MS = 1_300;
+const BACKEND_WARMUP_TIMEOUT_MS = 20_000;
 
 function BackendStartupScreen({
   status,
@@ -327,9 +327,20 @@ function ProtectedRoute() {
 
   useEffect(() => {
     let mounted = true;
+
+    // Avoid leaving protected pages on an endless session-check screen if
+    // Supabase is slow or unreachable. Normal auth events still update status.
+    const sessionTimeout = window.setTimeout(() => {
+      if (mounted) setStatus("unauthenticated");
+    }, 10_000);
+
     const applySession = (session) => {
       if (mounted) setStatus(session?.user ? "authenticated" : "unauthenticated");
     };
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      applySession(session);
+    });
 
     const checkSession = async () => {
       try {
@@ -339,14 +350,16 @@ function ProtectedRoute() {
       } catch (error) {
         console.error("Authentication check failed:", error);
         if (mounted) setStatus("unauthenticated");
+      } finally {
+        window.clearTimeout(sessionTimeout);
       }
     };
 
-    checkSession();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => applySession(session));
+    void checkSession();
 
     return () => {
       mounted = false;
+      window.clearTimeout(sessionTimeout);
       subscription.unsubscribe();
     };
   }, []);
@@ -403,111 +416,54 @@ function AppRoutes() {
 
 export default function App() {
   const [entered, setEntered] = useState(false);
-  const [status, setStatus] = useState("checking");
   const [elapsedMs, setElapsedMs] = useState(0);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
-    if (entered) return undefined;
-
     let cancelled = false;
-    let activeController = null;
     const startedAt = Date.now();
+    const controller = new AbortController();
 
-    setStatus("checking");
-    setElapsedMs(0);
-    setErrorMessage("");
-
+    // Keep the branded lifter splash briefly, but NEVER make entering the app
+    // depend on the backend's response. Render may be asleep, the root route
+    // may differ, or an endpoint may return a non-JSON response.
     const elapsedTimer = window.setInterval(() => {
       if (!cancelled) setElapsedMs(Date.now() - startedAt);
-    }, 400);
+    }, 250);
+    const splashTimer = window.setTimeout(() => {
+      if (!cancelled) setEntered(true);
+    }, SPLASH_DURATION_MS);
+    const warmupTimeout = window.setTimeout(() => controller.abort(), BACKEND_WARMUP_TIMEOUT_MS);
 
-    const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
-
-    const runReadinessCheck = async () => {
-      let attempt = 0;
-
-      while (!cancelled && Date.now() - startedAt < TOTAL_WAIT_LIMIT_MS) {
-        const remaining = TOTAL_WAIT_LIMIT_MS - (Date.now() - startedAt);
-        const controller = new AbortController();
-        activeController = controller;
-        const timeoutMs = Math.min(REQUEST_TIMEOUT_MS, remaining);
-        const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
-
-        try {
-          const response = await fetch(`${BACKEND_ORIGIN}/`, {
-            method: "GET",
-            cache: "no-store",
-            signal: controller.signal,
-          });
-
-          if (!response.ok) {
-            throw new Error(`Backend returned HTTP ${response.status}`);
-          }
-
-          const contentType = response.headers.get("content-type") || "";
-          if (!contentType.toLowerCase().includes("application/json")) {
-            throw new Error("The backend is still returning a startup page.");
-          }
-
-          const payload = await response.json();
-          if (!payload || typeof payload !== "object") {
-            throw new Error("The backend response was not valid JSON.");
-          }
-
-          if (cancelled) return;
-          setStatus("ready");
-          await sleep(500);
-          if (!cancelled) setEntered(true);
-          return;
-        } catch (error) {
-          if (cancelled) return;
-          setErrorMessage(error?.message || "Backend connection failed.");
-        } finally {
-          window.clearTimeout(timeout);
-          if (activeController === controller) activeController = null;
+    // Fire a best-effort request to wake the backend in the background. This
+    // request is intentionally not parsed or used as a gate for the frontend.
+    void fetch(`${BACKEND_ORIGIN}/`, {
+      method: "GET",
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .catch((error) => {
+        if (error?.name !== "AbortError") {
+          console.debug("BISense backend warm-up request did not complete:", error?.message || error);
         }
-
-        attempt += 1;
-        const elapsed = Date.now() - startedAt;
-        const left = TOTAL_WAIT_LIMIT_MS - elapsed;
-        if (left <= 0) break;
-
-        // Exponential backoff limits duplicate traffic if Render is waking or
-        // the network is unavailable.
-        const delay = Math.min(8000, 1800 * Math.pow(1.6, attempt - 1), left);
-        await sleep(delay);
-      }
-
-      if (!cancelled) {
-        setStatus("failed");
-        setErrorMessage((current) => current || "The backend did not respond before the wait limit.");
-      }
-    };
-
-    void runReadinessCheck();
+      })
+      .finally(() => window.clearTimeout(warmupTimeout));
 
     return () => {
       cancelled = true;
       window.clearInterval(elapsedTimer);
-      activeController?.abort();
+      window.clearTimeout(splashTimer);
+      window.clearTimeout(warmupTimeout);
+      controller.abort();
     };
-  }, [retryToken, entered]);
-
-  const retryConnection = () => {
-    setEntered(false);
-    setStatus("checking");
-    setRetryToken((value) => value + 1);
-  };
+  }, []);
 
   if (!entered) {
     return (
       <BackendStartupScreen
-        status={status}
+        status="checking"
         elapsedMs={elapsedMs}
-        errorMessage={errorMessage}
-        onRetry={retryConnection}
+        errorMessage=""
+        onRetry={() => setEntered(true)}
         onContinue={() => setEntered(true)}
       />
     );
